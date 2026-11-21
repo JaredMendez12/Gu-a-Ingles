@@ -1,6 +1,6 @@
 // Guarda la app en el celular para que funcione sin internet.
 // Cambia VERSION cada vez que se actualice el contenido.
-const VERSION = "ingles-v3";
+const VERSION = "ingles-v4";
 const FILES = [
   "./", "index.html", "styles.css", "app.js", "data.js", "content.js", "manifest.webmanifest",
   "icon-192.png", "icon-512.png", "apple-touch-icon.png", "maskable-512.png",

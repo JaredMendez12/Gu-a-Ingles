@@ -192,6 +192,8 @@ routes.home = () => {
         <a class="task ${log[k] >= GOALS[k] ? "ok" : ""}" href="${h}"><span class="check">${log[k] >= GOALS[k] ? "✓" : ""}</span>
         <span class="grow"><b>${t}</b><br><span class="muted small">${d}</span></span><span>›</span></a>`).join("")}</div>
     </div>
+    ${exportDue() ? `<a class="card row-card" href="#/reporte" style="border:2px solid var(--accent)"><div class="t">📤 Toca mandarle tu progreso a Claude</div>
+      <div class="muted small" style="margin-top:4px">Exporta el archivo y adjúntalo en el chat para que ajuste tu plan.</div></a>` : ""}
     <a class="card row-card" href="#/unidad/${u.id}">
       <div class="muted small">Estás en la unidad ${u.id} de ${UNITS.length} · ${u.level}</div>
       <div class="t big-t">${esc(u.title)}</div>
@@ -734,14 +736,85 @@ Historias: ${Object.keys(stories).length}/${STORIES.length} leídas · récord c
 Oraciones que más fallo:
 ${worst || "- (ninguna todavía)"}`;
 }
+/* ---------- Exportar / importar progreso (JSON) ---------- */
+const DATA_KEYS = ["days", "sent", "srs", "best", "stories", "profile", "rate", "newCount"];
+const EXPORT_EVERY = 7;
+const daysBetween = (a, b) => { const p = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }; return Math.round((p(b) - p(a)) / 86400000); };
+function buildExport() {
+  const days = store.get("days", {}), st = sstate(), p = profile(), srs = srsAll();
+  const week = Array.from({ length: 7 }, (_, k) => days[addDays(today(), -k)]).filter(Boolean);
+  const items = week.reduce((n, d) => n + (d.items || 0), 0), ok = week.reduce((n, d) => n + (d.ok || 0), 0);
+  const data = {}; DATA_KEYS.forEach((k) => { const v = store.get(k, undefined); if (v !== undefined) data[k] = v; });
+  return {
+    app: "ingles-diario", version: 3, exported: new Date().toISOString(),
+    summary: {
+      level: p.level, diagnostico: p.diag, unidadActual: curUnit(), unidadTitulo: UNITS[curUnit() - 1].title,
+      racha: streak(), diasActivosSemana: week.length, ejerciciosSemana: items, aciertosSemanaPct: items ? Math.round((ok / items) * 100) : 0,
+      diasPracticadosTotal: Object.values(days).filter((d) => d.items || d.cards || d.story || d.quiz).length,
+      dominioPorUnidad: Object.fromEntries(UNITS.map((u) => ["U" + u.id, unitMastery(u.id)])),
+      masFalladas: SENTENCES.filter((s) => st[s.id] && st[s.id].wrong > 0).sort((a, b) => st[b.id].wrong - st[a.id].wrong).slice(0, 15)
+        .map((s) => ({ id: s.id, unidad: s.unit, en: s.en, fallos: st[s.id].wrong, nivel: st[s.id].lvl })),
+      historias: store.get("stories", {}), recordContrarreloj: (store.get("best", {}).rush) || 0,
+      tarjetasDominadas: Object.fromEntries(Object.keys(DECKS).map((k) => [k, DECKS[k].cards.filter((c) => (srs[c.id] || {}).box >= 3).length])),
+    },
+    data,
+  };
+}
+const exportName = () => `ingles-progreso-${today()}.json`;
+const markExported = () => store.set("lastExport", today());
+async function shareExport() {
+  const json = JSON.stringify(buildExport(), null, 1);
+  const file = new File([json], exportName(), { type: "application/json" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: "Progreso de inglés" }); markExported(); toast("¡Listo! Mándaselo a Claude"); return; }
+    catch (e) { if (e && e.name === "AbortError") return; }
+  }
+  const url = URL.createObjectURL(file); const a = document.createElement("a");
+  a.href = url; a.download = exportName(); document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000); markExported(); toast("Archivo guardado");
+}
+function importProgress(text, done) {
+  let obj; try { obj = JSON.parse(text); } catch { return done("Ese archivo no es un JSON válido."); }
+  if (!obj || obj.app !== "ingles-diario" || !obj.data) return done("Ese archivo no es un progreso de esta app.");
+  DATA_KEYS.forEach((k) => { if (obj.data[k] !== undefined) store.set(k, obj.data[k]); else localStorage.removeItem("ing:" + k); });
+  done(null, obj.exported ? obj.exported.slice(0, 10) : "");
+}
+function exportDue() {
+  const last = store.get("lastExport", null);
+  if (last) return daysBetween(last, today()) >= EXPORT_EVERY;
+  return Object.values(store.get("days", {})).filter((d) => d.items || d.story).length >= 3;
+}
+
 routes.reporte = () => {
-  setTitle("Reporte para Claude", true);
-  const txt = buildReport();
-  view.innerHTML = `<p class="sub">Copia esto y pégalo en tu chat con Claude cada semana: con eso ajusta tu plan y agrega contenido para lo que más fallas.</p>
-    <pre class="report" id="rp">${esc(txt)}</pre><button class="btn" id="cp">Copiar reporte</button><p class="muted small center" id="msg"></p>`;
-  $("#cp").onclick = async () => {
-    try { await navigator.clipboard.writeText(txt); $("#msg").textContent = "¡Copiado! Pégalo en el chat."; }
-    catch { const r = document.createRange(); r.selectNodeContents($("#rp")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); $("#msg").textContent = "Selecciona y copia el texto."; }
+  setTitle("Enviar progreso a Claude", true);
+  const txt = buildReport(); const last = store.get("lastExport", null);
+  view.innerHTML = `
+    <div class="card"><div class="t">Cada domingo, mándale tu progreso a Claude</div>
+      <p class="sub" style="margin:6px 0 0">Con eso ajusta tu unidad, agrega oraciones e historias sobre lo que más fallas y sube la nueva versión a la app. También te sirve de respaldo.</p>
+      <p class="muted small" style="margin:8px 0 0">${last ? `Último envío: ${last} (hace ${daysBetween(last, today())} días)` : "Aún no lo has enviado."}</p></div>
+    <button class="btn" id="ex">📤 Exportar progreso (archivo JSON)</button>
+    <p class="muted small center">Se abre el menú de compartir: elige la app de Claude o «Guardar en Archivos» y luego adjúntalo en el chat.</p>
+    <button class="btn secondary" id="cj">Copiar JSON (si no puedes adjuntar)</button>
+    <h3>Resumen rápido</h3>
+    <pre class="report" id="rp">${esc(txt)}</pre><button class="btn secondary" id="cp">Copiar resumen</button>
+    <h3>Restaurar</h3>
+    <p class="sub">Si cambias de celular o borras la app, carga tu último archivo y recuperas todo.</p>
+    <button class="btn ghost" id="im">📥 Cargar progreso desde archivo</button><input type="file" id="file" accept=".json,application/json" hidden>
+    <p class="muted small center" id="msg"></p>`;
+  const copy = async (s, el) => {
+    try { await navigator.clipboard.writeText(s); $("#msg").textContent = "¡Copiado! Pégalo en el chat."; return true; }
+    catch { if (el) { const r = document.createRange(); r.selectNodeContents(el); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); } $("#msg").textContent = "No se pudo copiar automáticamente."; return false; }
+  };
+  $("#ex").onclick = () => shareExport().then(() => setTimeout(render, 600));
+  $("#cj").onclick = async () => { if (await copy(JSON.stringify(buildExport()))) markExported(); };
+  $("#cp").onclick = () => copy(txt, $("#rp"));
+  $("#im").onclick = () => $("#file").click();
+  $("#file").onchange = (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    f.text().then((t) => {
+      $("#msg").innerHTML = `<div class="feedback no">Esto reemplaza tu progreso actual por el del archivo. ¿Seguro?</div><button class="btn again" id="yes">Sí, restaurar</button>`;
+      $("#yes").onclick = () => importProgress(t, (err, when) => { if (err) { $("#msg").textContent = err; return; } toast(`Progreso restaurado${when ? " (" + when + ")" : ""}`); go("#/progreso"); });
+    });
   };
 };
 routes.progreso = () => {
@@ -758,7 +831,7 @@ routes.progreso = () => {
   }
   const rate = store.get("rate", 0.9);
   view.innerHTML = `
-    <a class="btn" href="#/reporte" style="margin-bottom:14px">📋 Reporte semanal para Claude</a>
+    <a class="btn" href="#/reporte" style="margin-bottom:14px">📤 Enviar progreso a Claude / respaldo</a>
     <div class="stats">
       <div class="stat"><b>🔥 ${streak()}</b><span>días seguidos</span></div>
       <div class="stat"><b>${active}</b><span>días practicados</span></div>

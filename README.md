@@ -10,7 +10,7 @@ App web personalizada para practicar inglés en el iPhone. Funciona sin internet
 - **Repetición espaciada:** cada oración vuelve justo antes de que la olvides; lo que fallas regresa en la misma sesión.
 - **Historias cortas** sobre programación, videojuegos y la universidad, con audio línea por línea y preguntas.
 - **Extras:** tarjetas, contrarreloj de verbos, shadowing con micrófono, habla 1 minuto, quiz, dictado y consulta de verbos.
-- **Reporte semanal para Claude** (en Progreso) para ajustar el plan y el contenido.
+- **Enviar progreso a Claude** (en Progreso): exporta un JSON cada domingo y adjúntalo en el chat para que Claude ajuste el plan. El mismo archivo sirve para restaurar tu progreso.
 
 ## Instalar en el iPhone
 1. Abre el enlace en **Safari**.
