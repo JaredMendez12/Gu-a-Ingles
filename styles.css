@@ -153,3 +153,31 @@ th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: upp
 .toast { position: fixed; left: 50%; bottom: calc(var(--tab-h) + 16px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px);
   background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-weight: 600; font-size: 14px; opacity: 0; transition: .25s; pointer-events: none; z-index: 10; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* v3 */
+.center { text-align: center; }
+.acc { color: var(--accent); }
+a.card { display: block; text-decoration: none; color: inherit; }
+.big-t { font-size: 19px; font-weight: 800; margin-top: 2px; }
+.t { font-weight: 700; }
+.row.current { border: 2px solid var(--accent); }
+button.row { cursor: pointer; }
+.unum { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-weight: 800; flex: none; }
+.unum.done { background: var(--good); color: #fff; }
+.progress.thin { height: 5px; margin-top: 8px; }
+ul.idea { margin: 10px 0 0; padding-left: 20px; }
+ul.idea li { margin-bottom: 8px; font-size: 16px; }
+.built { min-height: 58px; border: 2px dashed var(--line); border-radius: 14px; padding: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+.tile { font: inherit; font-size: 17px; font-weight: 600; padding: 10px 14px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); box-shadow: 0 2px 0 var(--line); }
+.tile.on { border-color: var(--accent); }
+.tile:disabled { opacity: .25; box-shadow: none; }
+.sol { margin-top: 8px; font-size: 16px; }
+.feedback .diff { margin: 8px 0 4px; font-size: 17px; }
+.speak.inline { margin: 4px 2px 0; padding: 4px 10px; font-size: 14px; }
+.story .line { padding: 10px 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.story .line:last-child { border-bottom: 0; }
+.story .en { flex: 1; font-size: 17px; line-height: 1.5; cursor: pointer; }
+.story .es-t { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 8px; font-size: 12px; font-weight: 700; padding: 3px 7px; }
+.story .es { width: 100%; color: var(--muted); font-size: 15px; }
+pre.report { white-space: pre-wrap; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; font-size: 13px; line-height: 1.45; user-select: text; -webkit-user-select: text; }

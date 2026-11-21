@@ -1,24 +1,23 @@
 # Inglés diario
 
-App web para practicar inglés todos los días desde el iPhone. Funciona sin internet una vez instalada.
+App web personalizada para practicar inglés en el iPhone. Funciona sin internet una vez instalada.
 
 **Abrir:** https://jaredmendez12.github.io/Gu-a-Ingles/
 
-## Qué incluye
-- **Reto del día** (~20 min) con racha de días seguidos.
-- **Tarjetas** con repetición espaciada: 129 verbos irregulares, frases útiles, inglés para TI, phrasal verbs y falsos amigos.
-- **Quiz rápido** (A1–B2) con explicación inmediata.
-- **Contrarreloj de verbos**: 60 segundos de pasado y participio.
-- **Dictado**: escucha y escribe, con corrección palabra por palabra.
-- **Escucha y repite** (shadowing) y **Habla 1 minuto** con situaciones reales.
-- **Consulta**: buscador de verbos irregulares y resumen de tiempos verbales.
+## Cómo funciona
+- **Ruta de 12 unidades (A1 → B1)** que empieza en tu nivel del diagnóstico. La siguiente unidad se abre al dominar el 80% de la actual.
+- **Sesión del día:** 20 ejercicios mezclados (escucha y elige, ordena la oración, completa escribiendo, tradúcelo tú, dictado, dilo en voz alta y sonidos difíciles). Se arma con lo que toca repasar, lo nuevo de tu unidad y tus errores.
+- **Repetición espaciada:** cada oración vuelve justo antes de que la olvides; lo que fallas regresa en la misma sesión.
+- **Historias cortas** sobre programación, videojuegos y la universidad, con audio línea por línea y preguntas.
+- **Extras:** tarjetas, contrarreloj de verbos, shadowing con micrófono, habla 1 minuto, quiz, dictado y consulta de verbos.
+- **Reporte semanal para Claude** (en Progreso) para ajustar el plan y el contenido.
 
 ## Instalar en el iPhone
 1. Abre el enlace en **Safari**.
-2. Toca **Compartir** → **Agregar a pantalla de inicio** → **Agregar**.
-3. Ábrela una vez con internet; después funciona sin conexión.
+2. **Compartir → Agregar a pantalla de inicio → Agregar**.
+3. Ábrela una vez desde el ícono con internet; después funciona sin conexión.
 
-El progreso se guarda solo en el celular.
+El progreso se guarda solo en el celular. El micrófono (calificar pronunciación) necesita internet.
 
 ## Actualizar contenido
-Edita `data.js` y cambia `VERSION` en `sw.js` para que el celular descargue la nueva versión.
+Edita `content.js` o `data.js` y cambia `VERSION` en `sw.js` para que el celular baje la versión nueva.
