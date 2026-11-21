@@ -1188,6 +1188,7 @@ routes.progreso = () => {
       <div class="chips">${Object.keys(LEVEL_START).map((l) => `<button class="chip ${p.level === l ? "on" : ""}" data-lv="${l}">${l}</button>`).join("")}</div>
       <a class="btn secondary" href="#/bienvenida" style="margin-top:6px">Editar mi perfil (nombre, metas e intereses)</a>
     </div>
+    <p class="muted small center" style="margin-top:14px">Versión ${APP_VERSION} · se actualiza sola cuando abres la app con internet</p>
     <h3>Zona de cuidado</h3>
     <p class="sub">Tu progreso vive solo en este celular. Exporta tu respaldo antes de borrar el ícono.</p>
     <button class="btn secondary" id="rs">Borrar mi progreso</button>`;
@@ -1208,5 +1209,16 @@ routes.progreso = () => {
 
 /* ---------- Arranque ---------- */
 applyPrefs();
-if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+const APP_VERSION = "9";
+if ("serviceWorker" in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || reloaded) return; reloaded = true;
+    toast("Actualizando la app..."); setTimeout(() => location.reload(), 600);
+  });
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").then((reg) => {
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
+  }).catch(() => {}));
+}
 render();
