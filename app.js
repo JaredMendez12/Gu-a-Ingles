@@ -187,12 +187,12 @@ const routes = {};
 let cleanup = null;
 const go = (h) => { location.hash = h; };
 function setTitle(t, back) { $("#title").textContent = t; $("#back").hidden = !back; }
-const TAB = { home: "home", ruta: "ruta", unidad: "ruta", practicar: "practicar", sesion: "practicar", historias: "practicar", historia: "practicar", sonidos: "practicar", errores: "practicar", tarjetas: "practicar", estudiar: "practicar", quiz: "practicar", dictado: "practicar", repite: "practicar", contrarreloj: "practicar", hablar: "practicar", consulta: "consulta", progreso: "progreso", metodo: "home", reporte: "progreso", bienvenida: "progreso", rapida: "practicar", guardadas: "practicar" };
+const TAB = { home: "home", ruta: "ruta", unidad: "ruta", practicar: "practicar", sesion: "practicar", historias: "practicar", historia: "practicar", sonidos: "practicar", errores: "practicar", tarjetas: "practicar", estudiar: "practicar", quiz: "practicar", dictado: "practicar", repite: "practicar", contrarreloj: "practicar", hablar: "practicar", consulta: "consulta", progreso: "progreso", metodo: "home", reporte: "progreso", bienvenida: "progreso", guias: "consulta", guia: "consulta", rapida: "practicar", guardadas: "practicar" };
 function render() {
   if (cleanup) { cleanup(); cleanup = null; }
   if (window.speechSynthesis) speechSynthesis.cancel();
   document.body.classList.remove("focus"); view.style.paddingBottom = "";
-  document.querySelectorAll(".sheet-bg, .actionbar").forEach((e) => e.remove());
+  document.querySelectorAll(".sheet-bg, .actionbar, .zoom").forEach((e) => e.remove());
   const parts = (location.hash.replace(/^#\/?/, "") || "").split("/");
   const name = parts[0] || "home";
   document.querySelectorAll(".tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === TAB[name]));
@@ -863,18 +863,77 @@ routes.dictado = (level = "Todos") => {
   show();
 };
 
+/* ---------- Guía completa (offline) ---------- */
+const GUIDE_ICONS = ["🧭", "🧱", "⏳", "🔁", "🧩", "💬", "📝"];
+const guideTitle = (i) => GUIDE_DOCS[i][0].replace(/^\d+ · /, "");
+const guideCache = {};
+async function loadGuide(i) {
+  if (guideCache[i]) return guideCache[i];
+  const r = await fetch(`guias/g${i}.html`); if (!r.ok) throw new Error("no");
+  return (guideCache[i] = await r.text());
+}
+routes.guias = () => {
+  setTitle("Guía completa", true);
+  const pos = store.get("guidePos", {}); const last = store.get("guideLast", null);
+  view.innerHTML = `<p class="sub">Las 7 partes de tu guía, dentro de la app. Abren al instante y sin internet.</p>
+    ${last !== null && GUIDE_DOCS[last] ? `<a class="card notice" href="#/guia/${last}"><div class="muted small">Continuar leyendo</div><div class="t">${GUIDE_ICONS[last]} ${esc(guideTitle(last))}</div></a>` : ""}
+    <div class="list">${GUIDE_DOCS.map((g, i) => `<a class="row" href="#/guia/${i}"><span class="emoji">${GUIDE_ICONS[i]}</span>
+      <span class="grow"><span class="t">${String(i).padStart(2, "0")} · ${esc(guideTitle(i))}</span>${pos[i] ? `<div class="progress thin"><span style="width:${pos[i].pct || 0}%"></span></div>` : ""}</span><span class="chev">›</span></a>`).join("")}</div>`;
+};
+routes.guia = (n) => {
+  const i = Math.max(0, Math.min(GUIDE_DOCS.length - 1, Number(n) || 0));
+  setTitle(guideTitle(i), true);
+  store.set("guideLast", i);
+  view.innerHTML = `<div class="center muted" style="padding:40px 0">Cargando...</div>`;
+  loadGuide(i).then((html) => {
+    view.innerHTML = `<div class="guide-head"><div class="muted small">Parte ${i + 1} de ${GUIDE_DOCS.length}</div><h2>${GUIDE_ICONS[i]} ${esc(guideTitle(i))}</h2>
+      <details class="toc"><summary>📑 Índice</summary><div id="toc"></div></details>
+      <p class="muted small" style="margin:6px 0 0">Toca cualquier ejemplo en <i>cursiva</i> para escucharlo.</p></div>
+      <article class="guide" id="gd">${html}</article>
+      <div class="btns">${i > 0 ? `<a class="btn secondary" href="#/guia/${i - 1}">‹ Anterior</a>` : ""}${i < GUIDE_DOCS.length - 1 ? `<a class="btn" href="#/guia/${i + 1}">Siguiente ›</a>` : `<a class="btn" href="#/guias">Volver al índice</a>`}</div>
+      <button class="fab" id="top" aria-label="Ir arriba" hidden>↑</button>`;
+    const gd = $("#gd");
+    $("#toc").innerHTML = [...gd.querySelectorAll("h2")].map((h) => `<button class="toc-i" data-id="${h.id}">${esc(h.textContent)}</button>`).join("");
+    $("#toc").onclick = (e) => { const b = e.target.closest(".toc-i"); if (!b) return; document.getElementById(b.dataset.id).scrollIntoView({ behavior: "smooth" }); b.closest("details").open = false; };
+    gd.onclick = (e) => {
+      const it = e.target.closest("i, em");
+      if (it && /[a-z]/i.test(it.textContent) && !/[áéíóúñ¿¡]/i.test(it.textContent)) { it.classList.add("saying"); speak(it.textContent.replace(/\.\.\./g, "")); setTimeout(() => it.classList.remove("saying"), 1200); return; }
+      const img = e.target.closest("figure img");
+      if (img) {
+        const m = document.createElement("div"); m.className = "zoom"; m.innerHTML = `<img src="${img.getAttribute("src")}" alt=""><button class="btn secondary sm" aria-label="Cerrar">Cerrar</button>`;
+        document.body.appendChild(m); m.onclick = (ev) => { if (ev.target.tagName !== "IMG") m.remove(); };
+      }
+    };
+    const pos = store.get("guidePos", {});
+    if (pos[i] && pos[i].y > 200) {
+      const y = pos[i].y; const b = document.createElement("button"); b.className = "resume"; b.textContent = "↓ Seguir donde te quedaste";
+      b.onclick = () => { window.scrollTo({ top: y, behavior: "smooth" }); b.remove(); }; view.prepend(b); setTimeout(() => b.remove(), 8000);
+    }
+    let tick = 0;
+    const onScroll = () => {
+      if ($("#top")) $("#top").hidden = window.scrollY < 600;
+      if (Date.now() - tick < 800) return; tick = Date.now();
+      const max = document.documentElement.scrollHeight - innerHeight;
+      const p = store.get("guidePos", {}); p[i] = { y: Math.round(scrollY), pct: Math.min(100, Math.round((scrollY / Math.max(1, max)) * 100)) }; store.set("guidePos", p);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    cleanup = () => { window.removeEventListener("scroll", onScroll); document.querySelectorAll(".zoom").forEach((z) => z.remove()); };
+    $("#top").onclick = () => window.scrollTo({ top: 0, behavior: "smooth" });
+  }).catch(() => { view.innerHTML = `<div class="card center"><h2>No se pudo abrir</h2><p class="sub">Abre la app una vez con internet para que se guarde la guía.</p><a class="btn" href="#/guias">Volver</a></div>`; });
+};
+
 /* ---------- Consulta ---------- */
 routes.consulta = () => {
   setTitle("Consulta", false);
-  view.innerHTML = `<input type="search" id="q" placeholder="Buscar verbo en inglés o español..." autocomplete="off">
+  view.innerHTML = `<a class="row" href="#/guias" style="margin-bottom:14px"><span class="emoji">📚</span><span class="grow"><span class="t">Guía completa (7 partes)</span><div class="d">Gramática, verbos, vocabulario y exámenes · funciona sin internet</div></span><span class="chev">›</span></a>
+    <input type="search" id="q" placeholder="Buscar verbo en inglés o español..." autocomplete="off">
     <h3>Verbos irregulares <span class="muted small">(toca para escuchar)</span></h3>
     <div class="card" style="padding:4px 12px"><table><thead><tr><th>Base</th><th>Pasado</th><th>Participio</th></tr></thead><tbody id="vt"></tbody></table></div>
     <h3>Las ideas clave de cada unidad</h3>
     <div class="list">${UNITS.map((u) => `<a class="row" href="#/unidad/${u.id}"><span class="unum">${u.id}</span><span class="grow"><span class="t">${esc(u.title)}</span><div class="d">${u.level}</div></span></a>`).join("")}</div>
     <h3>Los tiempos verbales</h3>
     <div class="card" style="padding:4px 12px"><table><tbody>${TENSES.map(([n, ex, u]) => `<tr><td><b>${n}</b><br><span class="muted small">${u}</span></td><td>${esc(ex)}</td></tr>`).join("")}</tbody></table></div>
-    <h3>Guía completa (necesita internet)</h3>
-    <div class="list">${GUIDE_DOCS.map(([t, u]) => `<a class="row" href="${u}" target="_blank" rel="noopener"><span class="grow"><span class="t">${esc(t)}</span></span><span>↗</span></a>`).join("")}</div>`;
+`;
   const sorted = VERBS.slice().sort((a, b) => a.base.localeCompare(b.base));
   const fill = (term = "") => {
     const t = term.trim().toLowerCase();

@@ -17,6 +17,8 @@ App web personalizada para practicar inglés en el iPhone. Funciona sin internet
 - **⭐ Mis frases:** guarda frases de ejercicios e historias y repásalas como tarjetas.
 - **Ajustes:** tiempo al día (5–20 min), sesión rápida para días pesados, letra grande, sonidos, velocidad de voz y modo oscuro automático.
 
+- **Guía completa dentro de la app** (Consulta → Guía completa): las 7 partes con índice, diagramas, ejemplos que se escuchan al tocarlos y respuestas plegables. Funciona sin internet.
+
 ## Instalar en el iPhone
 1. Abre el enlace en **Safari**.
 2. **Compartir → Agregar a pantalla de inicio → Agregar**.
