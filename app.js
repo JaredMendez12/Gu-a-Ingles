@@ -32,8 +32,9 @@ function toast(msg) {
 
 /* ---------- Sonidos de acierto/error ---------- */
 let actx = null;
+const silent = () => !!profile().silent;
 function beep(ok) {
-  if (!profile().sound) return;
+  if (!profile().sound || silent()) return;
   try {
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
     if (actx.state === "suspended") actx.resume();
@@ -129,7 +130,7 @@ function renderStreak() { $("#streak").textContent = "🔥 " + streak(); $("#xp"
 const totalXP = () => Object.values(store.get("days", {})).reduce((n, d) => n + (d.xp || 0), 0);
 
 const LEVEL_START = { A1: 1, A2: 7, B1: 12 };
-const PROFILE_DEFAULT = { level: "A1", diag: "15/40 (A1 en proceso)", unit: 1, name: "Jared", goals: [], interests: ["Programación", "Videojuegos", "Vida universitaria"], minutes: 10, sound: true, big: false, onboarded: false };
+const PROFILE_DEFAULT = { level: "A1", diag: "15/40 (A1 en proceso)", unit: 1, name: "Jared", goals: [], interests: ["Programación", "Videojuegos", "Vida universitaria"], minutes: 10, sound: true, big: false, silent: false, onboarded: false };
 function profile() { return Object.assign({}, PROFILE_DEFAULT, store.get("profile", {})); }
 const SESSION_SIZE = { 5: 10, 10: 15, 15: 20, 20: 25 };
 const sessionSize = () => SESSION_SIZE[profile().minutes] || 15;
@@ -187,7 +188,7 @@ const routes = {};
 let cleanup = null;
 const go = (h) => { location.hash = h; };
 function setTitle(t, back) { $("#title").textContent = t; $("#back").hidden = !back; }
-const TAB = { home: "home", ruta: "ruta", unidad: "ruta", practicar: "practicar", sesion: "practicar", historias: "practicar", historia: "practicar", sonidos: "practicar", errores: "practicar", tarjetas: "practicar", estudiar: "practicar", quiz: "practicar", dictado: "practicar", repite: "practicar", contrarreloj: "practicar", hablar: "practicar", consulta: "consulta", progreso: "progreso", metodo: "home", reporte: "progreso", bienvenida: "progreso", guias: "consulta", guia: "consulta", rapida: "practicar", guardadas: "practicar" };
+const TAB = { home: "home", ruta: "ruta", unidad: "ruta", practicar: "practicar", sesion: "practicar", historias: "practicar", historia: "practicar", sonidos: "practicar", errores: "practicar", tarjetas: "practicar", estudiar: "practicar", quiz: "practicar", dictado: "practicar", repite: "practicar", contrarreloj: "practicar", hablar: "practicar", consulta: "consulta", progreso: "progreso", metodo: "home", reporte: "progreso", bienvenida: "progreso", silenciosa: "practicar", parejas: "practicar", corrige: "practicar", palabras: "practicar", guias: "consulta", guia: "consulta", rapida: "practicar", guardadas: "practicar" };
 function render() {
   if (cleanup) { cleanup(); cleanup = null; }
   if (window.speechSynthesis) speechSynthesis.cancel();
@@ -240,7 +241,7 @@ routes.home = () => {
   const log = dayLog(), p = profile(), u = UNITS[curUnit() - 1];
   const tasks = [
     ["session", "Sesión del día", `${sessionSize()} ejercicios · ${p.minutes} min`, "#/sesion"],
-    ["story", "Una historia corta", "Escucha, lee y responde · 5 min", "#/historias"],
+    ["story", "Una historia corta", p.silent ? "Lee y responde · 5 min" : "Escucha, lee y responde · 5 min", "#/historias"],
   ];
   const doneN = tasks.filter(([k]) => log[k] >= GOALS[k]).length;
   const nextTask = tasks.find(([k]) => log[k] < GOALS[k]);
@@ -251,6 +252,7 @@ routes.home = () => {
   view.innerHTML = `
     <div class="hello">${hi}${p.name ? ", " + esc(p.name) : ""} 👋</div>
     <p class="sub">${log.done ? "Ya cumpliste hoy. Lo extra suma, pero descansar también." : streak() ? `Llevas ${streak()} ${streak() === 1 ? "día" : "días"} seguidos. No rompas la racha.` : "Hoy empieza tu racha."}</p>
+    <button class="silent-t ${p.silent ? "on" : ""}" id="silent">${p.silent ? "🤫 Modo silencioso activado · sin audio ni hablar" : "🔊 ¿En la calle? Activa el modo silencioso"}</button>
     <div class="card hero">
       <div class="hero-grid"><div class="ring" style="--p:${(doneN / tasks.length) * 100}"><span>${doneN}/${tasks.length}</span></div>
         <div><div class="muted small">Reto de hoy</div><div class="big-t">${log.done ? "¡Completado! 🔥" : nextTask ? "Sigue: " + nextTask[1].toLowerCase() : ""}</div>
@@ -275,11 +277,14 @@ routes.home = () => {
     </div>
     <h3>Extra si te sobra tiempo</h3>
     <div class="list">
+      ${p.silent ? `<a class="row" href="#/parejas"><span class="emoji">🧩</span><span class="grow"><span class="t">Parejas de vocabulario</span><div class="d">Sin audio, perfecto para la calle</div></span><span class="chev">›</span></a>
+      <a class="row" href="#/corrige"><span class="emoji">🕵️</span><span class="grow"><span class="t">Corrige el error</span><div class="d">Errores típicos de hispanohablantes</div></span><span class="chev">›</span></a>` : ""}
       ${errors ? `<a class="row" href="#/errores"><span class="emoji">🎯</span><span class="grow"><span class="t">Repasar mis errores</span><div class="d">${errors} oraciones que fallaste</div></span><span class="chev">›</span></a>` : ""}
-      <a class="row" href="#/sonidos"><span class="emoji">👂</span><span class="grow"><span class="t">Sonidos difíciles</span><div class="d">Entrena el oído: ship o sheep</div></span><span class="chev">›</span></a>
+      ${p.silent ? "" : `<a class="row" href="#/sonidos"><span class="emoji">👂</span><span class="grow"><span class="t">Sonidos difíciles</span><div class="d">Entrena el oído: ship o sheep</div></span><span class="chev">›</span></a>`}
       <a class="row" href="#/contrarreloj"><span class="emoji">⏱️</span><span class="grow"><span class="t">Contrarreloj de verbos</span><div class="d">60 segundos de irregulares</div></span><span class="chev">›</span></a>
       <a class="row" href="#/metodo"><span class="emoji">🧠</span><span class="grow"><span class="t">¿Por qué funciona este método?</span><div class="d">Lo que hace distinta a esta app</div></span><span class="chev">›</span></a>
     </div>`;
+  $("#silent").onclick = () => { setProfile({ silent: !p.silent }); toast(!p.silent ? "🤫 Modo silencioso: solo lectura y escritura" : "🔊 Modo normal con audio"); render(); };
 };
 
 /* ---------- Método ---------- */
@@ -341,11 +346,19 @@ function logTo(key, obj) { const l = store.get(key, []); l.push(Object.assign({ 
 
 /* ---------- Constructores de sesión ---------- */
 function typeFor(lvl, easy) {
+  if (silent()) {
+    if (easy) return rand(["read", "tiles"]);
+    return rand([["read", "tiles"], ["tiles", "cloze", "read"], ["cloze", "tiles", "read"], ["translate", "cloze"], ["translate", "cloze", "tiles"]][Math.min(lvl, 4)]);
+  }
   if (easy) return rand(["listen", "tiles"]);
   return rand([["listen", "tiles"], ["tiles", "cloze"], ["cloze", "dictation", "tiles"], ["translate", "dictation"], ["translate", "speak", "cloze"]][Math.min(lvl, 4)]);
 }
 const itemFor = (s) => ({ kind: "sentence", s, type: typeFor((stateOf(s.id) || { lvl: 0 }).lvl) });
 const pairItem = () => ({ kind: "pair", pair: rand(PAIRS) });
+const fixItem = (f) => ({ kind: "fix", fix: f || rand(FIX) });
+const matchItem = (cat) => ({ kind: "match", words: pick(cat ? VOCAB_LIST.filter((w) => w.cat === cat) : VOCAB_LIST, 5) });
+const wordItem = (w) => ({ kind: "word", w, rev: Math.random() < 0.4 });
+const extraItem = () => (silent() ? fixItem() : pairItem());
 function buildDaily(size = sessionSize()) {
   const cu = curUnit(), st = sstate(), t = today();
   const pool = SENTENCES.filter((s) => s.unit <= cu);
@@ -357,25 +370,25 @@ function buildDaily(size = sessionSize()) {
   const nPairs = size >= 15 ? 2 : 1;
   const list = [...due, ...fresh, ...fill].slice(0, size - nPairs - 1);
   const items = shuffle(list.map(itemFor));
-  items.splice(2, 0, pairItem()); if (nPairs > 1) items.splice(Math.floor(items.length / 2) + 1, 0, pairItem());
-  const sp = list.find((s) => (st[s.id] || {}).lvl >= 1) || list[0];
-  if (sp) items.push({ kind: "sentence", s: sp, type: "speak" });
+  items.splice(2, 0, extraItem()); if (nPairs > 1) items.splice(Math.floor(items.length / 2) + 1, 0, extraItem());
+  if (silent()) items.push(matchItem());
+  else { const sp = list.find((s) => (st[s.id] || {}).lvl >= 1) || list[0]; if (sp) items.push({ kind: "sentence", s: sp, type: "speak" }); }
   return items.slice(0, size);
 }
 function buildUnitSession(uid) {
   const items = shuffle(SENTENCES.filter((s) => s.unit === uid)).map(itemFor);
-  items.splice(4, 0, pairItem());
+  items.splice(4, 0, extraItem());
   return items.slice(0, 12);
 }
 function buildErrors() {
   const st = sstate();
   const list = SENTENCES.filter((s) => st[s.id] && st[s.id].wrong > 0 && st[s.id].lvl < 3)
     .sort((a, b) => st[b.id].wrong - st[a.id].wrong).slice(0, 12);
-  return list.map((s) => ({ kind: "sentence", s, type: rand(["tiles", "cloze", "translate", "dictation"]) }));
+  return list.map((s) => ({ kind: "sentence", s, type: rand(silent() ? ["tiles", "cloze", "translate", "read"] : ["tiles", "cloze", "translate", "dictation"]) }));
 }
 
 /* ---------- Motor de ejercicios ---------- */
-const TYPE_NAME = { listen: "Escucha y elige", tiles: "Ordena la oración", cloze: "Completa la palabra", translate: "Escríbelo en inglés", dictation: "Escribe lo que oyes", speak: "Dilo en voz alta", pair: "¿Qué palabra oíste?" };
+const TYPE_NAME = { read: "Lee y elige", fix: "Encuentra el error", match: "Une las parejas", word: "Vocabulario", listen: "Escucha y elige", tiles: "Ordena la oración", cloze: "Completa la palabra", translate: "Escríbelo en inglés", dictation: "Escribe lo que oyes", speak: "Dilo en voz alta", pair: "¿Qué palabra oíste?" };
 const PRAISE = ["¡Correcto!", "¡Eso!", "¡Muy bien!", "¡Perfecto!", "¡Excelente!", "¡Así se hace!"];
 const audioBtns = () => `<div class="audio"><button class="play" id="pl" aria-label="Escuchar">🔊</button><button class="play slow" id="sl" aria-label="Escuchar lento">🐢</button></div>`;
 const ruleFor = (s) => { const u = UNITS.find((x) => x.id === s.unit); return u ? `<div class="rule">📌 ${md(u.idea[0])}</div>` : ""; };
@@ -442,7 +455,7 @@ function runSession(items, title, daily) {
 
 function renderItem(it, ctx, cb, setEnter) {
   const { done, total, xp, combo } = ctx;
-  const kind = it.kind === "pair" ? "pair" : it.type;
+  const kind = it.kind === "sentence" ? it.type : it.kind;
   view.style.paddingBottom = "";
   view.innerHTML = `<div class="ex-top"><button class="x" id="quit" aria-label="Salir">✕</button>
       <div class="progress"><span style="width:${(done / total) * 100}%"></span></div><span class="xp-pill">${combo >= 3 ? "🔥" + combo + " " : ""}⚡ ${xp}</span></div>
@@ -464,7 +477,7 @@ function renderItem(it, ctx, cb, setEnter) {
     body.querySelectorAll("button.opt, input").forEach((el) => (el.disabled = true)); body.querySelectorAll(".tile").forEach((el) => (el.style.pointerEvents = "none"));
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     const s = it.kind === "sentence" ? it.s : null;
-    if (s && window.speechSynthesis) setTimeout(() => speak(s.en), 250);
+    if (s && window.speechSynthesis && !silent()) setTimeout(() => speak(s.en), 250);
     ab.className = "actionbar " + (correct ? "ok" : "no");
     $("#fbx").innerHTML = `<div class="fb-title">${correct ? "✓ " + rand(PRAISE) : "✗ " + (opts.title || "No exactamente")}</div>
       <div class="fb-body">${html || ""}</div>
@@ -486,7 +499,58 @@ function renderItem(it, ctx, cb, setEnter) {
     requestAnimationFrame(fit);
   };
   const sol = (s) => `<div class="sol"><b>${esc(s.en)}</b><br><span class="muted">${esc(s.es)}</span></div>`;
-  const bindAudio = (text) => { $("#pl").onclick = () => speak(text); $("#sl").onclick = () => speak(text, true); setTimeout(() => speak(text), 350); };
+  const bindAudio = (text) => { $("#pl").onclick = () => speak(text); $("#sl").onclick = () => speak(text, true); if (!silent()) setTimeout(() => speak(text), 350); };
+
+  if (it.kind === "fix") {
+    const [wrong, bad, right, why] = it.fix;
+    const strip = (w) => w.replace(/[.,!?]/g, "");
+    const words = wrong.split(" "), badW = bad.split(" ");
+    const start = words.findIndex((w, i) => badW.every((b, k) => strip(words[i + k] || "") === b));
+    const badIdx = new Set(badW.map((_, k) => start + k));
+    body.innerHTML = `<p class="prompt-es">Esta oración tiene un error típico. Toca la palabra que está mal.</p><div class="tiles fixw" id="fw">${words.map((w, i) => `<button class="tile" data-i="${i}">${esc(w)}</button>`).join("")}</div>`;
+    $("#fw").onclick = (e) => {
+      const b = e.target.closest(".tile"); if (!b || answered) return;
+      const ok = badIdx.has(Number(b.dataset.i));
+      body.querySelectorAll(".tile").forEach((t) => badIdx.has(Number(t.dataset.i)) && t.classList.add("right"));
+      if (!ok) b.classList.add("wrong");
+      feedback(ok, `Correcto: <div class="sol"><b>${esc(right)}</b></div><div class="rule">📌 ${esc(why)}</div>`);
+    };
+    return;
+  }
+  if (it.kind === "match") {
+    const items = it.words;
+    const col = (side, arr) => arr.map((x) => `<button class="mt" data-side="${side}" data-i="${x.i}">${esc(x.t)}</button>`).join("");
+    body.innerHTML = `<p class="prompt-es">Toca una palabra y luego su traducción.</p>
+      <div class="match"><div>${col("l", shuffle(items.map((w, i) => ({ t: w.en, i }))))}</div><div>${col("r", shuffle(items.map((w, i) => ({ t: w.es, i }))))}</div></div>`;
+    let sel = null, got = 0, miss = 0;
+    body.querySelector(".match").onclick = (e) => {
+      const b = e.target.closest(".mt"); if (!b || b.disabled || answered) return;
+      if (!sel || sel.dataset.side === b.dataset.side) { if (sel) sel.classList.remove("sel"); sel = b; b.classList.add("sel"); return; }
+      if (sel.dataset.i === b.dataset.i) {
+        [sel, b].forEach((x) => { x.classList.remove("sel"); x.classList.add("ok"); x.disabled = true; }); sel = null; got++;
+        if (got === items.length) feedback(miss <= 1, `${miss ? miss + (miss === 1 ? " intento fallido." : " intentos fallidos.") : "¡Sin errores!"}<div class="muted small" style="margin-top:6px">${items.map((w) => `${esc(w.en)} = ${esc(w.es)}`).join(" · ")}</div>`);
+      } else {
+        miss++; const a = sel; sel = null; [a, b].forEach((x) => x.classList.add("bad"));
+        setTimeout(() => [a, b].forEach((x) => x.classList.remove("bad", "sel")), 450);
+      }
+    };
+    return;
+  }
+  if (it.kind === "word") {
+    const w = it.w, rev = it.rev;
+    const others = pick(VOCAB_LIST.filter((x) => x.cat === w.cat && x.en !== w.en && x.es !== w.es), 3);
+    body.innerHTML = `<div class="prompt">${esc(rev ? w.es : w.en)}</div><p class="prompt-es">${rev ? "¿Cómo se dice en inglés?" : "¿Qué significa?"} · ${esc(w.cat)}</p>
+      <div id="op">${shuffle([w, ...others]).map((o) => `<button class="opt" data-en="${esc(o.en)}">${esc(rev ? o.en : o.es)}</button>`).join("")}</div>`;
+    $("#op").onclick = (e) => {
+      const b = e.target.closest(".opt"); if (!b || answered) return;
+      const correct = b.dataset.en === w.en;
+      body.querySelectorAll(".opt").forEach((o) => o.dataset.en === w.en && o.classList.add("right"));
+      if (!correct) b.classList.add("wrong");
+      feedback(correct, `<b>${esc(w.en)}</b> = ${esc(w.es)} <button class="speak inline" id="ws">🔊</button>`);
+      $("#ws").onclick = () => speak(w.en.replace(/^to /, ""));
+    };
+    return;
+  }
 
   if (it.kind === "pair") {
     const [w1, w2, e1, e2] = it.pair; const target = Math.random() < 0.5 ? w1 : w2;
@@ -505,11 +569,11 @@ function renderItem(it, ctx, cb, setEnter) {
   }
 
   const s = it.s;
-  if (it.type === "listen") {
+  if (it.type === "listen" || it.type === "read") {
     const others = shuffle(SENTENCES.filter((x) => x.id !== s.id && Math.abs(x.unit - s.unit) <= 1)).slice(0, 2);
-    body.innerHTML = `<p class="prompt-es">¿Qué significa lo que oyes?</p>${audioBtns()}
-      <div id="op">${shuffle([s, ...others]).map((o) => `<button class="opt" data-id="${o.id}">${esc(o.es)}</button>`).join("")}</div>`;
-    bindAudio(s.en);
+    body.innerHTML = (it.type === "read" ? `<div class="prompt">${esc(s.en)}</div><p class="prompt-es">¿Qué significa?</p>` : `<p class="prompt-es">¿Qué significa lo que oyes?</p>${audioBtns()}`)
+      + `<div id="op">${shuffle([s, ...others]).map((o) => `<button class="opt" data-id="${o.id}">${esc(o.es)}</button>`).join("")}</div>`;
+    if (it.type === "listen") bindAudio(s.en);
     $("#op").onclick = (e) => {
       const b = e.target.closest(".opt"); if (!b || answered) return;
       const correct = b.dataset.id === s.id;
@@ -607,6 +671,22 @@ function renderItem(it, ctx, cb, setEnter) {
 /* ---------- Rutas de práctica ---------- */
 routes.sesion = () => runSession(buildDaily(), "Sesión del día", true);
 routes.rapida = () => runSession(buildDaily(6), "Sesión rápida", true);
+routes.silenciosa = () => { setProfile({ silent: true }); runSession(buildDaily(), "Sesión silenciosa", true); };
+routes.parejas = (cat) => runSession(Array.from({ length: 5 }, () => matchItem(cat ? decodeURIComponent(cat) : null)), "Parejas", false);
+routes.corrige = () => runSession(pick(FIX, 10).map(fixItem), "Corrige el error", false);
+routes.palabras = (cat) => {
+  if (cat === undefined) {
+    setTitle("¿Qué significa?", true);
+    const cats = Object.keys(VOCAB);
+    view.innerHTML = `<p class="sub">Vocabulario sin audio: lee la palabra y elige su significado. 12 preguntas por ronda.</p>
+      <div class="list"><a class="row" href="#/palabras/todas"><span class="emoji">🎲</span><span class="grow"><span class="t">Todas mezcladas</span><div class="d">${VOCAB_LIST.length} palabras</div></span><span class="chev">›</span></a>
+      ${cats.map((c) => `<a class="row" href="#/palabras/${encodeURIComponent(c)}"><span class="emoji">📦</span><span class="grow"><span class="t">${esc(c)}</span><div class="d">${VOCAB_LIST.filter((w) => w.cat === c).length} palabras · <span class="acc" data-p="${esc(c)}">jugar parejas</span></div></span><span class="chev">›</span></a>`).join("")}</div>`;
+    view.querySelectorAll("[data-p]").forEach((x) => (x.onclick = (e) => { e.preventDefault(); go("#/parejas/" + encodeURIComponent(x.dataset.p)); }));
+    return;
+  }
+  const c = decodeURIComponent(cat); const pool = c === "todas" ? VOCAB_LIST : VOCAB_LIST.filter((w) => w.cat === c);
+  runSession(pick(pool, 12).map(wordItem), c === "todas" ? "Vocabulario" : c, false);
+};
 routes.errores = () => runSession(buildErrors(), "Mis errores", false);
 routes.sonidos = () => runSession(Array.from({ length: 12 }, pairItem), "Sonidos difíciles", false);
 
@@ -623,6 +703,14 @@ routes.practicar = () => {
       ${row("#/historias", "📖", "Historias", "Input comprensible: escucha, lee y responde")}
       ${row("#/errores", "🎯", "Mis errores", errors ? `${errors} oraciones por dominar` : "Aún no tienes errores guardados")}
       ${row("#/guardadas", "⭐", "Mis frases guardadas", saved ? `${saved} frases · repásalas como tarjetas` : "Guarda frases con ⭐ en ejercicios e historias")}
+    </div>
+    <h3>🤫 En la calle (sin audio ni hablar)</h3>
+    <div class="list">
+      ${row("#/silenciosa", "🤫", "Sesión silenciosa", "La sesión del día solo con lectura y escritura · cuenta para tu reto")}
+      ${row("#/parejas", "🧩", "Parejas", "Une palabras con su traducción · rápido y adictivo")}
+      ${row("#/palabras", "🔤", "¿Qué significa?", `${VOCAB_LIST.length} palabras por temas: tecnología, calle, juegos...`)}
+      ${row("#/corrige", "🕵️", "Corrige el error", `${FIX.length} errores típicos de hispanohablantes`)}
+      ${row("#/historias", "📖", "Leer una historia", "Lee sin audio y responde")}
     </div>
     <h3>Entrenamientos</h3>
     <div class="list">
@@ -1093,6 +1181,7 @@ routes.progreso = () => {
       <div class="chips">${[5, 10, 15, 20].map((m) => `<button class="chip ${p.minutes === m ? "on" : ""}" data-mn="${m}">${m} min</button>`).join("")}</div>
       <div class="setting"><span><span class="t">Velocidad de la voz</span></span></div>
       <div class="chips">${[[0.7, "Lenta"], [0.9, "Normal"], [1.05, "Rápida"]].map(([r, l]) => `<button class="chip ${Math.abs(rate - r) < 0.01 ? "on" : ""}" data-r="${r}">${l}</button>`).join("")}</div>
+      ${sw("sil", p.silent, "Modo silencioso", "Para la calle: sin audio automático ni ejercicios de hablar o escuchar")}
       ${sw("snd", p.sound, "Sonidos", "Al acertar y fallar")}
       ${sw("bigt", p.big, "Letra grande", "Agranda toda la app")}
       <div class="setting"><span><span class="t">Nivel de inicio</span><div class="muted small">Diagnóstico ${esc(p.diag)}. Cambiarlo te mueve al inicio de ese nivel.</div></span></div>
@@ -1105,6 +1194,7 @@ routes.progreso = () => {
   view.querySelectorAll("[data-mn]").forEach((b) => (b.onclick = () => { setProfile({ minutes: Number(b.dataset.mn) }); render(); }));
   view.querySelectorAll("[data-lv]").forEach((b) => (b.onclick = () => { setProfile({ level: b.dataset.lv, unit: LEVEL_START[b.dataset.lv] }); toast(`Empiezas en ${b.dataset.lv}`); render(); }));
   view.querySelectorAll("[data-r]").forEach((b) => (b.onclick = () => { store.set("rate", Number(b.dataset.r)); speak("This is how I sound."); render(); }));
+  $("#sil").onclick = () => { setProfile({ silent: !p.silent }); render(); };
   $("#snd").onclick = () => { setProfile({ sound: !p.sound }); if (!p.sound) beep(true); render(); };
   $("#bigt").onclick = () => { setProfile({ big: !p.big }); applyPrefs(); render(); };
   $("#rs").onclick = () => {

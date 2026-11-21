@@ -227,7 +227,7 @@ const STORIES = [
 ];
 
 // Construye la lista de oraciones con su id, unidad, respuesta objetivo y alternativas.
-const SENTENCES = UNITS.flatMap((u) => u.s.trim().split("\n").map((line, i) => {
+const SENTENCES = UNITS.flatMap((u) => (u.s.trim() + (typeof EXTRA_S !== "undefined" && EXTRA_S[u.id] ? "\n" + EXTRA_S[u.id].trim() : "")).split("\n").map((line, i) => {
   const [enRaw, es, alts = ""] = line.split("|").map((x) => x.trim());
   const m = enRaw.match(/\[(.+?)\]/);
   return {
@@ -238,3 +238,5 @@ const SENTENCES = UNITS.flatMap((u) => u.s.trim().split("\n").map((line, i) => {
     alts: alts ? alts.split(";").map((a) => a.trim()) : [],
   };
 }));
+
+if (typeof EXTRA_STORIES !== "undefined") STORIES.push(...EXTRA_STORIES);

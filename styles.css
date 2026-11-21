@@ -316,3 +316,18 @@ details.ans[open] summary { border-bottom: 1px solid var(--line); margin-bottom:
 .zoom { position: fixed; inset: 0; z-index: 25; background: rgba(10,15,25,.92); overflow: auto; display: flex; flex-direction: column; align-items: flex-start; padding: calc(16px + env(safe-area-inset-top)) 12px 16px; }
 .zoom img { width: 180%; max-width: none; background: #fff; border-radius: 10px; }
 .zoom .btn { position: fixed; top: calc(12px + env(safe-area-inset-top)); right: 12px; width: auto; }
+
+/* Modo silencioso y nuevos ejercicios */
+.silent-t { display: block; width: 100%; border: 2px dashed var(--line); background: transparent; color: var(--muted); font: inherit; font-weight: 700; font-size: 14px; border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; }
+.silent-t.on { border-style: solid; border-color: var(--navy-2); background: var(--navy-2); color: #fff; }
+.tile.right { border-color: var(--good); background: var(--good-soft); box-shadow: 0 3px 0 var(--good); }
+.tile.wrong { border-color: var(--bad); background: var(--bad-soft); box-shadow: 0 3px 0 var(--bad); }
+.fixw { justify-content: flex-start; margin-top: 8px; }
+.fixw .tile { font-size: 19px; }
+.match { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.match > div { display: grid; gap: 10px; align-content: start; }
+.mt { font: inherit; font-size: 16px; font-weight: 650; min-height: 56px; padding: 10px; border-radius: 14px; border: 2px solid var(--line); background: var(--card); color: var(--ink); box-shadow: 0 3px 0 var(--line); }
+.mt.sel { border-color: var(--navy-2); background: color-mix(in srgb, var(--navy-2) 12%, var(--card)); }
+.mt.ok { border-color: var(--good); background: var(--good-soft); box-shadow: none; opacity: .55; }
+.mt.bad { border-color: var(--bad); background: var(--bad-soft); animation: shake .3s; }
+@keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
