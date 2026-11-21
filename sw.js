@@ -1,9 +1,9 @@
 // Guarda la app en el celular para que funcione sin internet.
 // Cambia VERSION cada vez que se actualice el contenido.
-const VERSION = "ingles-v1";
+const VERSION = "ingles-v2";
 const FILES = [
   "./", "index.html", "styles.css", "app.js", "data.js", "manifest.webmanifest",
-  "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/maskable-512.png",
+  "icon-192.png", "icon-512.png", "apple-touch-icon.png", "maskable-512.png",
 ];
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
