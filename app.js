@@ -129,7 +129,7 @@ function renderStreak() { $("#streak").textContent = "🔥 " + streak(); $("#xp"
 const totalXP = () => Object.values(store.get("days", {})).reduce((n, d) => n + (d.xp || 0), 0);
 
 const LEVEL_START = { A1: 1, A2: 7, B1: 12 };
-const PROFILE_DEFAULT = { level: "A1", diag: "15/40 (A1 en proceso)", unit: 1, name: "", goals: [], interests: [], minutes: 10, sound: true, big: false, onboarded: false };
+const PROFILE_DEFAULT = { level: "A1", diag: "15/40 (A1 en proceso)", unit: 1, name: "Jared", goals: [], interests: ["Programación", "Videojuegos", "Vida universitaria"], minutes: 10, sound: true, big: false, onboarded: false };
 function profile() { return Object.assign({}, PROFILE_DEFAULT, store.get("profile", {})); }
 const SESSION_SIZE = { 5: 10, 10: 15, 15: 20, 20: 25 };
 const sessionSize = () => SESSION_SIZE[profile().minutes] || 15;
@@ -187,13 +187,12 @@ const routes = {};
 let cleanup = null;
 const go = (h) => { location.hash = h; };
 function setTitle(t, back) { $("#title").textContent = t; $("#back").hidden = !back; }
-const TAB = { home: "home", ruta: "ruta", unidad: "ruta", practicar: "practicar", sesion: "practicar", historias: "practicar", historia: "practicar", sonidos: "practicar", errores: "practicar", tarjetas: "practicar", estudiar: "practicar", quiz: "practicar", dictado: "practicar", repite: "practicar", contrarreloj: "practicar", hablar: "practicar", consulta: "consulta", progreso: "progreso", metodo: "home", reporte: "progreso", bienvenida: "home", rapida: "practicar", guardadas: "practicar" };
+const TAB = { home: "home", ruta: "ruta", unidad: "ruta", practicar: "practicar", sesion: "practicar", historias: "practicar", historia: "practicar", sonidos: "practicar", errores: "practicar", tarjetas: "practicar", estudiar: "practicar", quiz: "practicar", dictado: "practicar", repite: "practicar", contrarreloj: "practicar", hablar: "practicar", consulta: "consulta", progreso: "progreso", metodo: "home", reporte: "progreso", bienvenida: "progreso", rapida: "practicar", guardadas: "practicar" };
 function render() {
   if (cleanup) { cleanup(); cleanup = null; }
   if (window.speechSynthesis) speechSynthesis.cancel();
   document.body.classList.remove("focus"); view.style.paddingBottom = "";
   document.querySelectorAll(".sheet-bg, .actionbar").forEach((e) => e.remove());
-  if (!profile().onboarded && !location.hash.startsWith("#/bienvenida")) { location.replace("#/bienvenida"); return; }
   const parts = (location.hash.replace(/^#\/?/, "") || "").split("/");
   const name = parts[0] || "home";
   document.querySelectorAll(".tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === TAB[name]));
@@ -208,17 +207,17 @@ $("#back").addEventListener("click", () => (history.length > 1 ? history.back() 
 const GOAL_OPTS = ["Trabajar en TI", "Entender documentación", "Entrevistas de trabajo", "Videojuegos y series", "Viajar", "Certificación o examen", "Clases de la uni"];
 const INTEREST_OPTS = ["Programación", "Videojuegos", "Anime y series", "Música", "Deportes", "Tecnología", "Vida universitaria", "Comida"];
 routes.bienvenida = () => {
-  setTitle("Bienvenido", false); document.body.classList.add("focus");
+  setTitle("Tu perfil", true);
   const p = profile(); let goals = new Set(p.goals), ints = new Set(p.interests.length ? p.interests : ["Programación", "Videojuegos", "Vida universitaria"]), mins = p.minutes;
   view.innerHTML = `<div class="welcome">
-    <div class="logo">🇺🇸</div><h2>Vamos a armar tu plan</h2>
-    <p class="sub center">Tarda 30 segundos. Lo uso para ajustar tu sesión y Claude lo usa para escribir contenido para ti.</p>
+    <h2>Tu perfil</h2>
+    <p class="sub center">Claude usa esto para escribir oraciones e historias para ti.</p>
     <label for="nm">¿Cómo te llamas?</label><input type="text" id="nm" value="${esc(p.name || "Jared")}" autocomplete="given-name">
     <label>¿Para qué quieres el inglés? <span class="muted small">(elige varios)</span></label><div class="chips" id="gl"></div>
     <label>¿Qué te interesa? <span class="muted small">(los temas de tus oraciones e historias)</span></label><div class="chips" id="it"></div>
     <label>¿Cuánto tiempo al día?</label><div class="chips" id="mn"></div>
     <p class="muted small" id="mnd"></p>
-    <button class="btn" id="go" style="margin-top:16px">Empezar</button></div>`;
+    <button class="btn" id="go" style="margin-top:16px">Guardar</button></div>`;
   const draw = () => {
     $("#gl").innerHTML = GOAL_OPTS.map((g) => `<button class="chip ${goals.has(g) ? "on" : ""}" data-v="${esc(g)}">${esc(g)}</button>`).join("");
     $("#it").innerHTML = INTEREST_OPTS.map((g) => `<button class="chip ${ints.has(g) ? "on" : ""}" data-v="${esc(g)}">${esc(g)}</button>`).join("");
@@ -231,7 +230,7 @@ routes.bienvenida = () => {
   $("#mn").onclick = (e) => { const b = e.target.closest(".chip"); if (b) { mins = Number(b.dataset.m); draw(); } };
   $("#go").onclick = () => {
     setProfile({ name: $("#nm").value.trim(), goals: [...goals], interests: [...ints], minutes: mins, onboarded: true });
-    go("#/");
+    toast("Perfil guardado"); go("#/progreso");
   };
 };
 
@@ -1039,7 +1038,7 @@ routes.progreso = () => {
       ${sw("bigt", p.big, "Letra grande", "Agranda toda la app")}
       <div class="setting"><span><span class="t">Nivel de inicio</span><div class="muted small">Diagnóstico ${esc(p.diag)}. Cambiarlo te mueve al inicio de ese nivel.</div></span></div>
       <div class="chips">${Object.keys(LEVEL_START).map((l) => `<button class="chip ${p.level === l ? "on" : ""}" data-lv="${l}">${l}</button>`).join("")}</div>
-      <a class="btn secondary" href="#/bienvenida" style="margin-top:6px">Cambiar nombre, metas e intereses</a>
+      <a class="btn secondary" href="#/bienvenida" style="margin-top:6px">Editar mi perfil (nombre, metas e intereses)</a>
     </div>
     <h3>Zona de cuidado</h3>
     <p class="sub">Tu progreso vive solo en este celular. Exporta tu respaldo antes de borrar el ícono.</p>
