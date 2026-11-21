@@ -12,6 +12,11 @@ App web personalizada para practicar inglés en el iPhone. Funciona sin internet
 - **Extras:** tarjetas, contrarreloj de verbos, shadowing con micrófono, habla 1 minuto, quiz, dictado y consulta de verbos.
 - **Enviar progreso a Claude** (en Progreso): exporta un JSON cada domingo y adjúntalo en el chat para que Claude ajuste el plan. El mismo archivo sirve para restaurar tu progreso.
 
+- **Diseño de práctica enfocada:** pantalla completa durante los ejercicios, botón fijo abajo, sonidos de acierto/error, combos y XP.
+- **Ayudas:** pistas en dos niveles, la regla de la unidad cuando fallas, "Mi respuesta era correcta" y 🚩 reportar ejercicios.
+- **⭐ Mis frases:** guarda frases de ejercicios e historias y repásalas como tarjetas.
+- **Ajustes:** tiempo al día (5–20 min), sesión rápida para días pesados, letra grande, sonidos, velocidad de voz y modo oscuro automático.
+
 ## Instalar en el iPhone
 1. Abre el enlace en **Safari**.
 2. **Compartir → Agregar a pantalla de inicio → Agregar**.

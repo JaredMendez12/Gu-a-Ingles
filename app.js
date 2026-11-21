@@ -30,6 +30,23 @@ function toast(msg) {
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2000);
 }
 
+/* ---------- Sonidos de acierto/error ---------- */
+let actx = null;
+function beep(ok) {
+  if (!profile().sound) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === "suspended") actx.resume();
+    (ok ? [660, 990] : [330, 247]).forEach((f, i) => {
+      const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime + i * 0.1;
+      o.type = ok ? "sine" : "triangle"; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+      o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.2);
+    });
+  } catch {}
+  if (navigator.vibrate) navigator.vibrate(ok ? 15 : [30, 40, 30]);
+}
+
 /* ---------- Comparar respuestas ---------- */
 const NUMS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
 const norm = (s) => String(s).toLowerCase().replace(/[’`]/g, "'")
@@ -89,7 +106,8 @@ function listenOnce(onText, onErr) {
 
 /* ---------- Registro del día, racha y nivel ---------- */
 const GOALS = { session: 1, story: 1 };
-const emptyLog = () => ({ session: 0, story: 0, items: 0, ok: 0, cards: 0, quiz: 0, dict: 0, speak: 0, done: false });
+const emptyLog = () => ({ session: 0, story: 0, items: 0, ok: 0, cards: 0, quiz: 0, dict: 0, speak: 0, xp: 0, done: false });
+const XP = { ok: 10, wrong: 2, story: 20, card: 2, quiz: 5, speak: 5, perfect: 20 };
 function dayLog(d = today()) { return Object.assign(emptyLog(), store.get("days", {})[d] || {}); }
 function bump(kind, n = 1) {
   const days = store.get("days", {}); const d = today();
@@ -107,10 +125,15 @@ function streak() {
   while (days[d] && days[d].done) { n++; d = addDays(d, -1); }
   return n;
 }
-function renderStreak() { $("#streak").textContent = "🔥 " + streak(); }
+function renderStreak() { $("#streak").textContent = "🔥 " + streak(); $("#xp").textContent = "⚡ " + dayLog().xp; }
+const totalXP = () => Object.values(store.get("days", {})).reduce((n, d) => n + (d.xp || 0), 0);
 
 const LEVEL_START = { A1: 1, A2: 7, B1: 12 };
-function profile() { return Object.assign({ level: "A1", diag: "15/40 (A1 en proceso)", unit: 1 }, store.get("profile", {})); }
+const PROFILE_DEFAULT = { level: "A1", diag: "15/40 (A1 en proceso)", unit: 1, name: "", goals: [], interests: [], minutes: 10, sound: true, big: false, onboarded: false };
+function profile() { return Object.assign({}, PROFILE_DEFAULT, store.get("profile", {})); }
+const SESSION_SIZE = { 5: 10, 10: 15, 15: 20, 20: 25 };
+const sessionSize = () => SESSION_SIZE[profile().minutes] || 15;
+function applyPrefs() { document.documentElement.classList.toggle("big", !!profile().big); }
 function setProfile(p) { store.set("profile", Object.assign(profile(), p)); }
 const curUnit = () => Math.min(UNITS.length, profile().unit);
 
@@ -140,10 +163,15 @@ function maybeAdvance() {
 const INTERVALS = [0, 1, 3, 7, 14, 30, 60];
 const NEW_PER_DAY = 10;
 const srsAll = () => store.get("srs", {});
-function dueCards(k) { const s = srsAll(), t = today(); return DECKS[k].cards.filter((c) => s[c.id] && s[c.id].due <= t); }
+function deckOf(k) {
+  if (k === "mias") return { name: "Mis frases", desc: "Las que guardaste con ⭐", cards: savedList().map((x) => ({ id: "m:" + x.en, front: x.en, back: x.es, note: x.src ? "De: " + x.src : "", speak: x.en })) };
+  return DECKS[k];
+}
+const deckKeys = () => [...(savedList().length ? ["mias"] : []), ...Object.keys(DECKS)];
+function dueCards(k) { const s = srsAll(), t = today(); return deckOf(k).cards.filter((c) => s[c.id] && s[c.id].due <= t); }
 function newCards(k) {
   const s = srsAll(); const used = store.get("newCount", {})[today() + ":" + k] || 0;
-  return DECKS[k].cards.filter((c) => !s[c.id]).slice(0, Math.max(0, NEW_PER_DAY - used));
+  return deckOf(k).cards.filter((c) => !s[c.id]).slice(0, Math.max(0, NEW_PER_DAY - used));
 }
 function gradeCard(card, g) {
   const srs = srsAll(); const isNew = !srs[card.id];
@@ -159,10 +187,13 @@ const routes = {};
 let cleanup = null;
 const go = (h) => { location.hash = h; };
 function setTitle(t, back) { $("#title").textContent = t; $("#back").hidden = !back; }
-const TAB = { home: "home", ruta: "ruta", unidad: "ruta", practicar: "practicar", sesion: "practicar", historias: "practicar", historia: "practicar", sonidos: "practicar", errores: "practicar", tarjetas: "practicar", estudiar: "practicar", quiz: "practicar", dictado: "practicar", repite: "practicar", contrarreloj: "practicar", hablar: "practicar", consulta: "consulta", progreso: "progreso", metodo: "home", reporte: "progreso" };
+const TAB = { home: "home", ruta: "ruta", unidad: "ruta", practicar: "practicar", sesion: "practicar", historias: "practicar", historia: "practicar", sonidos: "practicar", errores: "practicar", tarjetas: "practicar", estudiar: "practicar", quiz: "practicar", dictado: "practicar", repite: "practicar", contrarreloj: "practicar", hablar: "practicar", consulta: "consulta", progreso: "progreso", metodo: "home", reporte: "progreso", bienvenida: "home", rapida: "practicar", guardadas: "practicar" };
 function render() {
   if (cleanup) { cleanup(); cleanup = null; }
   if (window.speechSynthesis) speechSynthesis.cancel();
+  document.body.classList.remove("focus"); view.style.paddingBottom = "";
+  document.querySelectorAll(".sheet-bg, .actionbar").forEach((e) => e.remove());
+  if (!profile().onboarded && !location.hash.startsWith("#/bienvenida")) { location.replace("#/bienvenida"); return; }
   const parts = (location.hash.replace(/^#\/?/, "") || "").split("/");
   const name = parts[0] || "home";
   document.querySelectorAll(".tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === TAB[name]));
@@ -173,43 +204,82 @@ function render() {
 window.addEventListener("hashchange", render);
 $("#back").addEventListener("click", () => (history.length > 1 ? history.back() : go("#/")));
 
+/* ---------- Bienvenida (personalización) ---------- */
+const GOAL_OPTS = ["Trabajar en TI", "Entender documentación", "Entrevistas de trabajo", "Videojuegos y series", "Viajar", "Certificación o examen", "Clases de la uni"];
+const INTEREST_OPTS = ["Programación", "Videojuegos", "Anime y series", "Música", "Deportes", "Tecnología", "Vida universitaria", "Comida"];
+routes.bienvenida = () => {
+  setTitle("Bienvenido", false); document.body.classList.add("focus");
+  const p = profile(); let goals = new Set(p.goals), ints = new Set(p.interests.length ? p.interests : ["Programación", "Videojuegos", "Vida universitaria"]), mins = p.minutes;
+  view.innerHTML = `<div class="welcome">
+    <div class="logo">🇺🇸</div><h2>Vamos a armar tu plan</h2>
+    <p class="sub center">Tarda 30 segundos. Lo uso para ajustar tu sesión y Claude lo usa para escribir contenido para ti.</p>
+    <label for="nm">¿Cómo te llamas?</label><input type="text" id="nm" value="${esc(p.name || "Jared")}" autocomplete="given-name">
+    <label>¿Para qué quieres el inglés? <span class="muted small">(elige varios)</span></label><div class="chips" id="gl"></div>
+    <label>¿Qué te interesa? <span class="muted small">(los temas de tus oraciones e historias)</span></label><div class="chips" id="it"></div>
+    <label>¿Cuánto tiempo al día?</label><div class="chips" id="mn"></div>
+    <p class="muted small" id="mnd"></p>
+    <button class="btn" id="go" style="margin-top:16px">Empezar</button></div>`;
+  const draw = () => {
+    $("#gl").innerHTML = GOAL_OPTS.map((g) => `<button class="chip ${goals.has(g) ? "on" : ""}" data-v="${esc(g)}">${esc(g)}</button>`).join("");
+    $("#it").innerHTML = INTEREST_OPTS.map((g) => `<button class="chip ${ints.has(g) ? "on" : ""}" data-v="${esc(g)}">${esc(g)}</button>`).join("");
+    $("#mn").innerHTML = [5, 10, 15, 20].map((m) => `<button class="chip ${mins === m ? "on" : ""}" data-m="${m}">${m} min</button>`).join("");
+    $("#mnd").textContent = `Sesión de ${SESSION_SIZE[mins]} ejercicios${mins <= 5 ? ". Ideal para días pesados." : mins >= 20 ? ". Modo intensivo." : "."}`;
+  };
+  draw();
+  const toggle = (set) => (e) => { const b = e.target.closest(".chip"); if (!b) return; set.has(b.dataset.v) ? set.delete(b.dataset.v) : set.add(b.dataset.v); draw(); };
+  $("#gl").onclick = toggle(goals); $("#it").onclick = toggle(ints);
+  $("#mn").onclick = (e) => { const b = e.target.closest(".chip"); if (b) { mins = Number(b.dataset.m); draw(); } };
+  $("#go").onclick = () => {
+    setProfile({ name: $("#nm").value.trim(), goals: [...goals], interests: [...ints], minutes: mins, onboarded: true });
+    go("#/");
+  };
+};
+
 /* ---------- Inicio ---------- */
 routes.home = () => {
   setTitle("Inglés diario", false);
   const log = dayLog(), p = profile(), u = UNITS[curUnit() - 1];
   const tasks = [
-    ["session", "Sesión del día", "20 ejercicios mezclados · 12 min", "#/sesion"],
+    ["session", "Sesión del día", `${sessionSize()} ejercicios · ${p.minutes} min`, "#/sesion"],
     ["story", "Una historia corta", "Escucha, lee y responde · 5 min", "#/historias"],
   ];
   const doneN = tasks.filter(([k]) => log[k] >= GOALS[k]).length;
+  const nextTask = tasks.find(([k]) => log[k] < GOALS[k]);
   const errors = Object.values(sstate()).filter((s) => s.wrong > 0 && s.lvl < 3).length;
+  const h = new Date().getHours();
+  const hi = h < 12 ? "Buenos días" : h < 19 ? "Buenas tardes" : "Buenas noches";
+  const m = unitMastery(u.id);
   view.innerHTML = `
+    <div class="hello">${hi}${p.name ? ", " + esc(p.name) : ""} 👋</div>
+    <p class="sub">${log.done ? "Ya cumpliste hoy. Lo extra suma, pero descansar también." : streak() ? `Llevas ${streak()} ${streak() === 1 ? "día" : "días"} seguidos. No rompas la racha.` : "Hoy empieza tu racha."}</p>
     <div class="card hero">
-      <div class="muted small">Reto de hoy</div>
-      <h2 style="margin:4px 0 10px">${log.done ? "¡Completado! Mañana sigue 💪" : `${doneN} de ${tasks.length} listos`}</h2>
-      <div class="progress"><span style="width:${(doneN / tasks.length) * 100}%"></span></div>
-      <div style="margin-top:10px">${tasks.map(([k, t, d, h]) => `
-        <a class="task ${log[k] >= GOALS[k] ? "ok" : ""}" href="${h}"><span class="check">${log[k] >= GOALS[k] ? "✓" : ""}</span>
-        <span class="grow"><b>${t}</b><br><span class="muted small">${d}</span></span><span>›</span></a>`).join("")}</div>
+      <div class="hero-grid"><div class="ring" style="--p:${(doneN / tasks.length) * 100}"><span>${doneN}/${tasks.length}</span></div>
+        <div><div class="muted small">Reto de hoy</div><div class="big-t">${log.done ? "¡Completado! 🔥" : nextTask ? "Sigue: " + nextTask[1].toLowerCase() : ""}</div>
+        <div class="muted small">⚡ ${log.xp} XP hoy</div></div></div>
+      ${tasks.map(([k, t, d, hr]) => `<a class="task ${log[k] >= GOALS[k] ? "ok" : ""}" href="${hr}"><span class="check">${log[k] >= GOALS[k] ? "✓" : ""}</span>
+        <span class="grow"><b>${t}</b><br><span class="muted small">${d}</span></span><span>›</span></a>`).join("")}
+      ${nextTask ? `<a class="btn" href="${nextTask[3]}">${nextTask[0] === "session" ? "Empezar sesión" : "Leer una historia"}</a>` : `<a class="btn secondary" href="#/sesion">Otra sesión (opcional)</a>`}
+      ${!log.done && nextTask && nextTask[0] === "session" ? `<a class="btn ghost" href="#/rapida" style="color:#fff">¿Poco tiempo? Sesión rápida de 3 min</a>` : ""}
     </div>
-    ${exportDue() ? `<a class="card row-card" href="#/reporte" style="border:2px solid var(--accent)"><div class="t">📤 Toca mandarle tu progreso a Claude</div>
+    ${exportDue() ? `<a class="card notice" href="#/reporte"><div class="t">📤 Toca mandarle tu progreso a Claude</div>
       <div class="muted small" style="margin-top:4px">Exporta el archivo y adjúntalo en el chat para que ajuste tu plan.</div></a>` : ""}
-    <a class="card row-card" href="#/unidad/${u.id}">
-      <div class="muted small">Estás en la unidad ${u.id} de ${UNITS.length} · ${u.level}</div>
-      <div class="t big-t">${esc(u.title)}</div>
-      <div class="progress" style="margin-top:10px"><span style="width:${unitMastery(u.id)}%"></span></div>
-      <div class="muted small" style="margin-top:6px">${unitMastery(u.id)}% dominado · al llegar a 80% se abre la siguiente</div>
+    <a class="card" href="#/unidad/${u.id}">
+      <div class="muted small">Unidad ${u.id} de ${UNITS.length} · ${u.level}</div>
+      <div class="big-t">${esc(u.title)}</div>
+      <div class="progress ${m >= 80 ? "good" : ""}" style="margin-top:10px"><span style="width:${m}%"></span></div>
+      <div class="muted small" style="margin-top:6px">${m}% dominado · ${m >= 80 ? "¡lista! La siguiente ya está abierta" : `te falta ${80 - m}% para abrir la siguiente`}</div>
     </a>
-    <div class="stats">
-      <div class="stat"><b>${streak()}</b><span>días seguidos</span></div>
-      <div class="stat"><b>${p.level}</b><span>nivel de inicio · diagnóstico ${esc(p.diag.split(" ")[0])}</span></div>
+    <div class="stats three">
+      <div class="stat"><b>🔥 ${streak()}</b><span>racha</span></div>
+      <div class="stat"><b>⚡ ${totalXP()}</b><span>XP total</span></div>
+      <div class="stat"><b>${p.level}</b><span>nivel de inicio</span></div>
     </div>
     <h3>Extra si te sobra tiempo</h3>
     <div class="list">
-      ${errors ? `<a class="row" href="#/errores"><span class="emoji">🎯</span><span class="grow"><span class="t">Repasar mis errores</span><div class="d">${errors} oraciones que fallaste</div></span></a>` : ""}
-      <a class="row" href="#/sonidos"><span class="emoji">👂</span><span class="grow"><span class="t">Sonidos difíciles</span><div class="d">Entrena el oído: ship o sheep</div></span></a>
-      <a class="row" href="#/contrarreloj"><span class="emoji">⏱️</span><span class="grow"><span class="t">Contrarreloj de verbos</span><div class="d">60 segundos de irregulares</div></span></a>
-      <a class="row" href="#/metodo"><span class="emoji">🧠</span><span class="grow"><span class="t">¿Por qué funciona este método?</span><div class="d">Lo que hace distinta a esta app</div></span></a>
+      ${errors ? `<a class="row" href="#/errores"><span class="emoji">🎯</span><span class="grow"><span class="t">Repasar mis errores</span><div class="d">${errors} oraciones que fallaste</div></span><span class="chev">›</span></a>` : ""}
+      <a class="row" href="#/sonidos"><span class="emoji">👂</span><span class="grow"><span class="t">Sonidos difíciles</span><div class="d">Entrena el oído: ship o sheep</div></span><span class="chev">›</span></a>
+      <a class="row" href="#/contrarreloj"><span class="emoji">⏱️</span><span class="grow"><span class="t">Contrarreloj de verbos</span><div class="d">60 segundos de irregulares</div></span><span class="chev">›</span></a>
+      <a class="row" href="#/metodo"><span class="emoji">🧠</span><span class="grow"><span class="t">¿Por qué funciona este método?</span><div class="d">Lo que hace distinta a esta app</div></span><span class="chev">›</span></a>
     </div>`;
 };
 
@@ -259,26 +329,39 @@ routes.unidad = (id) => {
   const sc = $("#setcur"); if (sc) sc.onclick = () => { setProfile({ unit: u.id }); toast("Listo, es tu unidad actual"); render(); };
 };
 
+/* ---------- Frases guardadas, reportes y correcciones ---------- */
+const savedList = () => store.get("saved", []);
+const isSaved = (en) => savedList().some((x) => x.en === en);
+function toggleSaved(en, es, src) {
+  let l = savedList();
+  if (l.some((x) => x.en === en)) { l = l.filter((x) => x.en !== en); toast("Quitada de tus frases"); }
+  else { l.push({ en, es, src: src || "", date: today() }); toast("⭐ Guardada en tus frases"); }
+  store.set("saved", l); return isSaved(en);
+}
+function logTo(key, obj) { const l = store.get(key, []); l.push(Object.assign({ date: today() }, obj)); store.set(key, l.slice(-200)); }
+
 /* ---------- Constructores de sesión ---------- */
 function typeFor(lvl, easy) {
   if (easy) return rand(["listen", "tiles"]);
-  return rand([["listen", "tiles"], ["tiles", "cloze"], ["cloze", "dictation"], ["translate", "dictation"], ["translate", "speak", "cloze"]][Math.min(lvl, 4)]);
+  return rand([["listen", "tiles"], ["tiles", "cloze"], ["cloze", "dictation", "tiles"], ["translate", "dictation"], ["translate", "speak", "cloze"]][Math.min(lvl, 4)]);
 }
 const itemFor = (s) => ({ kind: "sentence", s, type: typeFor((stateOf(s.id) || { lvl: 0 }).lvl) });
 const pairItem = () => ({ kind: "pair", pair: rand(PAIRS) });
-function buildDaily() {
+function buildDaily(size = sessionSize()) {
   const cu = curUnit(), st = sstate(), t = today();
   const pool = SENTENCES.filter((s) => s.unit <= cu);
-  const due = pool.filter((s) => st[s.id] && st[s.id].due <= t).sort((a, b) => st[a.id].due.localeCompare(st[b.id].due)).slice(0, 8);
-  const fresh = SENTENCES.filter((s) => s.unit === cu && !st[s.id]).slice(0, 6);
+  const nDue = Math.round(size * 0.45), nNew = Math.round(size * 0.3);
+  const due = pool.filter((s) => st[s.id] && st[s.id].due <= t).sort((a, b) => st[a.id].due.localeCompare(st[b.id].due)).slice(0, nDue);
+  const fresh = SENTENCES.filter((s) => s.unit === cu && !st[s.id]).slice(0, nNew);
   const chosen = new Set([...due, ...fresh].map((s) => s.id));
   const fill = shuffle(pool.filter((s) => !chosen.has(s.id))).sort((a, b) => ((st[a.id] || {}).lvl || 0) - ((st[b.id] || {}).lvl || 0));
-  const list = [...due, ...fresh, ...fill].slice(0, 17);
+  const nPairs = size >= 15 ? 2 : 1;
+  const list = [...due, ...fresh, ...fill].slice(0, size - nPairs - 1);
   const items = shuffle(list.map(itemFor));
-  items.splice(3, 0, pairItem()); items.splice(9, 0, pairItem());
+  items.splice(2, 0, pairItem()); if (nPairs > 1) items.splice(Math.floor(items.length / 2) + 1, 0, pairItem());
   const sp = list.find((s) => (st[s.id] || {}).lvl >= 1) || list[0];
   if (sp) items.push({ kind: "sentence", s: sp, type: "speak" });
-  return items.slice(0, 20);
+  return items.slice(0, size);
 }
 function buildUnitSession(uid) {
   const items = shuffle(SENTENCES.filter((s) => s.unit === uid)).map(itemFor);
@@ -293,70 +376,130 @@ function buildErrors() {
 }
 
 /* ---------- Motor de ejercicios ---------- */
-const TYPE_NAME = { listen: "Escucha y elige", tiles: "Ordena la oración", cloze: "Completa escribiendo", translate: "Dilo en inglés (escribe)", dictation: "Dictado", speak: "Dilo en voz alta", pair: "¿Qué palabra oíste?" };
+const TYPE_NAME = { listen: "Escucha y elige", tiles: "Ordena la oración", cloze: "Completa la palabra", translate: "Escríbelo en inglés", dictation: "Escribe lo que oyes", speak: "Dilo en voz alta", pair: "¿Qué palabra oíste?" };
+const PRAISE = ["¡Correcto!", "¡Eso!", "¡Muy bien!", "¡Perfecto!", "¡Excelente!", "¡Así se hace!"];
+const audioBtns = () => `<div class="audio"><button class="play" id="pl" aria-label="Escuchar">🔊</button><button class="play slow" id="sl" aria-label="Escuchar lento">🐢</button></div>`;
+const ruleFor = (s) => { const u = UNITS.find((x) => x.id === s.unit); return u ? `<div class="rule">📌 ${md(u.idea[0])}</div>` : ""; };
+
+function confirmQuit() {
+  const m = document.createElement("div"); m.className = "sheet-bg";
+  m.innerHTML = `<div class="sheet"><h2>¿Salir de la sesión?</h2><p class="sub" style="margin:0">Lo que ya respondiste se guarda, pero la sesión no cuenta para tu reto de hoy.</p>
+    <button class="btn" id="stay">Seguir practicando</button><button class="btn ghost" id="leave">Salir</button></div>`;
+  document.body.appendChild(m);
+  m.onclick = (e) => { if (e.target === m) m.remove(); };
+  m.querySelector("#stay").onclick = () => m.remove();
+  m.querySelector("#leave").onclick = () => { m.remove(); go("#/"); };
+}
+
 function runSession(items, title, daily) {
   setTitle(title, true);
   if (!items.length) {
     view.innerHTML = `<div class="card center"><div class="big">✓</div><h2>Nada pendiente</h2><p class="sub">No hay ejercicios aquí por ahora.</p><a class="btn" href="#/">Inicio</a></div>`;
     return;
   }
-  const queue = items.slice(); const total = items.length; let done = 0, ok = 0; const retried = new Set();
+  document.body.classList.add("focus");
+  const queue = items.slice(); const total = items.length; let done = 0, ok = 0, xp = 0, combo = 0; const retried = new Set(); const missed = [];
+  let onEnter = null;
+  const keyH = (e) => { if (e.key === "Enter" && onEnter && !(e.target && e.target.tagName === "INPUT")) { e.preventDefault(); onEnter(); } };
+  document.addEventListener("keydown", keyH);
+  cleanup = () => document.removeEventListener("keydown", keyH);
   const next = () => {
     if (!queue.length) return finish();
     const it = queue.shift();
-    renderItem(it, done, total, (correct) => {
-      done++; if (correct) ok++;
+    renderItem(it, { done, total, xp, combo }, (correct) => {
+      done++;
+      if (correct) { ok++; combo++; xp += XP.ok + (combo >= 5 ? 5 : 0); } else { combo = 0; xp += XP.wrong; }
       if (it.kind === "sentence") gradeSentence(it.s.id, correct);
-      if (!correct && it.kind === "sentence" && !retried.has(it.s.id)) {
-        retried.add(it.s.id);
-        queue.splice(Math.min(3, queue.length), 0, { kind: "sentence", s: it.s, type: typeFor(0, true), retry: true });
+      if (!correct && it.kind === "sentence") {
+        if (!missed.includes(it.s)) missed.push(it.s);
+        if (!retried.has(it.s.id)) { retried.add(it.s.id); queue.splice(Math.min(3, queue.length), 0, { kind: "sentence", s: it.s, type: typeFor(0, true), retry: true }); }
       }
       next();
-    });
+    }, (fn) => (onEnter = fn));
   };
   const finish = () => {
+    onEnter = null;
+    document.body.classList.remove("focus"); document.querySelectorAll(".actionbar").forEach((e) => e.remove()); view.style.paddingBottom = "";
     const pct = Math.round((ok / Math.max(1, done)) * 100);
+    const perfect = pct === 100 && done >= 8;
+    if (perfect) xp += XP.perfect;
     if (daily) bump("session");
+    bump("xp", xp);
     const days = store.get("days", {}); const d = today(); const log = Object.assign(emptyLog(), days[d] || {});
     log.items += done; log.ok += ok; days[d] = log; store.set("days", days);
-    maybeAdvance();
-    view.innerHTML = `<div class="card center"><div class="big">${pct}%</div>
-      <h2>${pct >= 85 ? "¡Excelente sesión!" : pct >= 65 ? "¡Bien hecho!" : "Buen esfuerzo: lo que fallaste regresará pronto"}</h2>
-      <p class="sub">${ok} de ${done} correctas. Los errores ya se guardaron para repasarlos.</p>
-      <div class="btns">${daily && dayLog().story < 1 ? `<a class="btn" href="#/historias">Sigue: una historia</a>` : `<a class="btn" href="#/">Inicio</a>`}
-      <a class="btn secondary" href="#/errores">Mis errores</a></div></div>`;
+    maybeAdvance(); beep(true);
+    view.innerHTML = `<div class="card center pop" style="margin-top:10px"><div style="font-size:52px">${perfect ? "🏆" : pct >= 80 ? "🎉" : pct >= 60 ? "💪" : "🌱"}</div>
+      <h2>${perfect ? "¡Sesión perfecta!" : pct >= 80 ? "¡Excelente sesión!" : pct >= 60 ? "¡Bien hecho!" : "Buen esfuerzo"}</h2>
+      <div class="stats three" style="margin:14px 0 4px"><div class="stat"><b>${pct}%</b><span>aciertos</span></div><div class="stat"><b>⚡ ${xp}</b><span>XP ganados</span></div><div class="stat"><b>🔥 ${streak()}</b><span>racha</span></div></div></div>
+      ${missed.length ? `<h3>Para repasar (ya están en tu cola)</h3><div class="list mistakes">${missed.map((s) => `<div class="row"><button class="mini say" data-t="${esc(s.en)}" aria-label="Escuchar">🔊</button><span class="grow"><span class="t">${esc(s.en)}</span><div class="d">${esc(s.es)}</div></span>
+        <button class="mini star ${isSaved(s.en) ? "on" : ""}" data-en="${esc(s.en)}" data-es="${esc(s.es)}" aria-label="Guardar">⭐</button></div>`).join("")}</div>` : ""}
+      <div class="btns">${daily && dayLog().story < 1 ? `<a class="btn" href="#/historias">Sigue: una historia</a>` : `<a class="btn" href="#/">Listo</a>`}
+      ${missed.length ? `<a class="btn secondary" href="#/errores">Repasar errores</a>` : ""}</div>`;
+    view.querySelectorAll(".say").forEach((b) => (b.onclick = () => speak(b.dataset.t)));
+    view.querySelectorAll(".star").forEach((b) => (b.onclick = () => b.classList.toggle("on", toggleSaved(b.dataset.en, b.dataset.es, "sesión"))));
   };
   next();
 }
 
-function renderItem(it, done, total, cb) {
-  const head = (extra = "") => `
-    <div class="counter"><span>${done + 1} de ${total}${it.retry ? " · otra vez" : ""}</span><span>${TYPE_NAME[it.kind === "pair" ? "pair" : it.type]}</span></div>
-    <div class="progress" style="margin-bottom:16px"><span style="width:${(done / total) * 100}%"></span></div>${extra}`;
+function renderItem(it, ctx, cb, setEnter) {
+  const { done, total, xp, combo } = ctx;
+  const kind = it.kind === "pair" ? "pair" : it.type;
+  view.style.paddingBottom = "";
+  view.innerHTML = `<div class="ex-top"><button class="x" id="quit" aria-label="Salir">✕</button>
+      <div class="progress"><span style="width:${(done / total) * 100}%"></span></div><span class="xp-pill">${combo >= 3 ? "🔥" + combo + " " : ""}⚡ ${xp}</span></div>
+    <div class="ex-kind">${TYPE_NAME[kind]}${it.retry ? ' <span class="again-tag">· otra vez</span>' : ""}</div><div id="body"></div>`;
+  $("#quit").onclick = confirmQuit;
+  document.querySelectorAll(".actionbar").forEach((e) => e.remove());
+  const ab = document.createElement("div"); ab.className = "actionbar empty";
+  ab.innerHTML = `<div class="ab-in"><div id="fbx" aria-live="polite"></div><div class="ab-btns" id="abb"></div></div>`;
+  document.body.appendChild(ab);
+  const body = $("#body");
+  const setButtons = (html) => { $("#abb").innerHTML = html; ab.classList.toggle("empty", !html); };
+  setEnter(null);
   let answered = false;
-  const feedback = (correct, html) => {
+  const fit = () => { view.style.paddingBottom = ab.offsetHeight + 24 + "px"; };
+
+  const feedback = (correct, html, opts = {}) => {
     if (answered) return; answered = true;
-    if (window.speechSynthesis && it.kind === "sentence") speak(it.s.en);
-    const fb = document.createElement("div");
-    fb.innerHTML = `<div class="feedback ${correct ? "ok" : "no"}"><b>${correct ? rand(["¡Correcto!", "¡Eso!", "¡Muy bien!", "¡Perfecto!"]) : "Casi."}</b> ${html || ""}</div>
-      <button class="btn" id="nx">Continuar</button>`;
-    view.appendChild(fb); $("#nx").onclick = () => cb(correct); $("#nx").scrollIntoView({ behavior: "smooth", block: "end" });
+    beep(correct);
+    body.querySelectorAll("button.opt, input").forEach((el) => (el.disabled = true)); body.querySelectorAll(".tile").forEach((el) => (el.style.pointerEvents = "none"));
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    const s = it.kind === "sentence" ? it.s : null;
+    if (s && window.speechSynthesis) setTimeout(() => speak(s.en), 250);
+    ab.className = "actionbar " + (correct ? "ok" : "no");
+    $("#fbx").innerHTML = `<div class="fb-title">${correct ? "✓ " + rand(PRAISE) : "✗ " + (opts.title || "No exactamente")}</div>
+      <div class="fb-body">${html || ""}</div>
+      ${s ? `<div class="fb-tools"><button class="tool" id="t-say">🔊 Escuchar</button><button class="tool ${isSaved(s.en) ? "on" : ""}" id="t-save">⭐ Guardar</button><button class="tool" id="t-flag">🚩 Reportar</button></div>` : ""}`;
+    setButtons(`${opts.dispute ? `<button class="btn secondary sm" id="disp">Mi respuesta era correcta</button>` : ""}<button class="btn ${correct ? "easy" : "again"}" id="nx">Continuar</button>`);
+    let final = correct;
+    const go_ = () => { setEnter(null); cb(final); };
+    $("#nx").onclick = go_; setEnter(go_);
+    if (s) {
+      $("#t-say").onclick = () => speak(s.en);
+      $("#t-save").onclick = (e) => e.currentTarget.classList.toggle("on", toggleSaved(s.en, s.es, "U" + s.unit));
+      $("#t-flag").onclick = (e) => { logTo("flags", { id: s.id, en: s.en, type: kind, typed: opts.typed || "" }); e.currentTarget.textContent = "🚩 Reportado"; e.currentTarget.disabled = true; toast("Gracias. Va en tu próximo reporte para Claude"); };
+    }
+    if (opts.dispute) $("#disp").onclick = () => {
+      logTo("disputes", { id: s.id, en: s.en, typed: opts.typed || "" }); final = true;
+      ab.className = "actionbar ok"; $("#fbx .fb-title").textContent = "✓ Aceptada"; $("#disp").remove(); $("#nx").className = "btn easy";
+      toast("Se la mando a Claude para agregarla como válida");
+    };
+    requestAnimationFrame(fit);
   };
   const sol = (s) => `<div class="sol"><b>${esc(s.en)}</b><br><span class="muted">${esc(s.es)}</span></div>`;
+  const bindAudio = (text) => { $("#pl").onclick = () => speak(text); $("#sl").onclick = () => speak(text, true); setTimeout(() => speak(text), 350); };
 
   if (it.kind === "pair") {
     const [w1, w2, e1, e2] = it.pair; const target = Math.random() < 0.5 ? w1 : w2;
-    view.innerHTML = head() + `<div class="card center"><p class="sub">Escucha con atención. Son casi iguales.</p>
-      <div class="btns"><button class="btn" id="pl">🔊 Escuchar</button><button class="btn secondary" id="sl">🐢 Lento</button></div></div>
+    body.innerHTML = `<p class="prompt-es">Escucha con atención: son casi iguales.</p>${audioBtns()}
       <div id="op">${shuffle([[w1, e1], [w2, e2]]).map(([w, e]) => `<button class="opt" data-w="${w}"><b>${w}</b> <span class="muted">· ${e}</span></button>`).join("")}</div>`;
-    $("#pl").onclick = () => speak(target); $("#sl").onclick = () => speak(target, true);
-    setTimeout(() => speak(target), 350);
+    bindAudio(target);
     $("#op").onclick = (e) => {
       const b = e.target.closest(".opt"); if (!b || answered) return;
       const correct = b.dataset.w === target;
-      view.querySelectorAll(".opt").forEach((o) => o.dataset.w === target && o.classList.add("right"));
+      body.querySelectorAll(".opt").forEach((o) => o.dataset.w === target && o.classList.add("right"));
       if (!correct) b.classList.add("wrong");
-      feedback(correct, `Era <b>${target}</b>. Escucha las dos: <button class="speak inline" id="b1">${w1}</button> <button class="speak inline" id="b2">${w2}</button>`);
+      feedback(correct, `Era <b>${target}</b>. Compara: <button class="speak inline" id="b1">🔊 ${w1}</button> <button class="speak inline" id="b2">🔊 ${w2}</button>`);
       $("#b1").onclick = () => speak(w1); $("#b2").onclick = () => speak(w2);
     };
     return;
@@ -365,87 +508,98 @@ function renderItem(it, done, total, cb) {
   const s = it.s;
   if (it.type === "listen") {
     const others = shuffle(SENTENCES.filter((x) => x.id !== s.id && Math.abs(x.unit - s.unit) <= 1)).slice(0, 2);
-    const opts = shuffle([s, ...others]);
-    view.innerHTML = head() + `<div class="card center"><p class="sub">¿Qué significa lo que oyes?</p>
-      <div class="btns"><button class="btn" id="pl">🔊 Escuchar</button><button class="btn secondary" id="sl">🐢 Lento</button></div></div>
-      <div id="op">${opts.map((o) => `<button class="opt" data-id="${o.id}">${esc(o.es)}</button>`).join("")}</div>`;
-    $("#pl").onclick = () => speak(s.en); $("#sl").onclick = () => speak(s.en, true);
-    setTimeout(() => speak(s.en), 350);
+    body.innerHTML = `<p class="prompt-es">¿Qué significa lo que oyes?</p>${audioBtns()}
+      <div id="op">${shuffle([s, ...others]).map((o) => `<button class="opt" data-id="${o.id}">${esc(o.es)}</button>`).join("")}</div>`;
+    bindAudio(s.en);
     $("#op").onclick = (e) => {
       const b = e.target.closest(".opt"); if (!b || answered) return;
       const correct = b.dataset.id === s.id;
-      view.querySelectorAll(".opt").forEach((o) => o.dataset.id === s.id && o.classList.add("right"));
+      body.querySelectorAll(".opt").forEach((o) => o.dataset.id === s.id && o.classList.add("right"));
       if (!correct) b.classList.add("wrong");
       feedback(correct, sol(s));
     };
   } else if (it.type === "tiles") {
-    const words = s.en.replace(/[.,!?¿¡]/g, "").split(/\s+/);
-    const distract = rand(SENTENCES.filter((x) => x.unit === s.unit && x.id !== s.id)).en.replace(/[.,!?]/g, "").split(/\s+/).find((w) => !words.map((x) => x.toLowerCase()).includes(w.toLowerCase()));
+    const words = s.en.replace(/[.,!?]/g, "").split(/\s+/);
+    const other = SENTENCES.filter((x) => x.unit === s.unit && x.id !== s.id);
+    const distract = other.length ? rand(other).en.replace(/[.,!?]/g, "").split(/\s+/).find((w) => !words.map((x) => x.toLowerCase()).includes(w.toLowerCase())) : null;
     const tiles = shuffle([...words, ...(distract ? [distract] : [])]).map((w, i) => ({ w, i }));
     let built = [];
-    view.innerHTML = head() + `<div class="q">${esc(s.es)}</div>
-      <div class="built" id="bt"><span class="muted small">Toca las palabras en orden</span></div>
-      <div class="tiles" id="tl"></div><div class="btns"><button class="btn good" id="ck">Revisar</button></div>`;
+    body.innerHTML = `<div class="prompt">${esc(s.es)}</div><p class="prompt-es">Toca las palabras en orden${distract ? " (sobra una)" : ""}.</p>
+      <div class="built" id="bt"></div><div class="tiles" id="tl"></div>`;
+    setButtons(`<button class="btn" id="ck" disabled>Revisar</button>`);
     const draw = () => {
-      $("#bt").innerHTML = built.length ? built.map((t) => `<button class="tile on" data-i="${t.i}">${esc(t.w)}</button>`).join("") : `<span class="muted small">Toca las palabras en orden</span>`;
+      $("#bt").innerHTML = built.length ? built.map((t) => `<button class="tile" data-i="${t.i}">${esc(t.w)}</button>`).join("") : `<span class="ph">Tu respuesta aparece aquí</span>`;
       $("#tl").innerHTML = tiles.map((t) => `<button class="tile" data-i="${t.i}" ${built.includes(t) ? "disabled" : ""}>${esc(t.w)}</button>`).join("");
+      if ($("#ck")) $("#ck").disabled = !built.length;
     };
     draw();
-    $("#tl").onclick = (e) => { const b = e.target.closest(".tile"); if (!b || answered) return; built.push(tiles.find((t) => t.i === Number(b.dataset.i))); draw(); };
+    $("#tl").onclick = (e) => { const b = e.target.closest(".tile"); if (!b || answered || b.disabled) return; built.push(tiles.find((t) => t.i === Number(b.dataset.i))); draw(); };
     $("#bt").onclick = (e) => { const b = e.target.closest(".tile"); if (!b || answered) return; built = built.filter((t) => t.i !== Number(b.dataset.i)); draw(); };
-    $("#ck").onclick = () => {
-      if (answered) return;
+    const check = () => {
+      if (answered || !built.length) return;
       const typed = built.map((t) => t.w).join(" ");
       const correct = norm(typed).join(" ") === norm(s.en).join(" ");
-      $("#ck").disabled = true;
-      feedback(correct, correct ? sol(s) : `La oración es:${sol(s)}`);
+      feedback(correct, correct ? sol(s) : `${diffHtml(compare(s.en, typed))}${sol(s)}${ruleFor(s)}`, { typed });
     };
+    $("#ck").onclick = check; setEnter(check);
   } else if (it.type === "cloze" || it.type === "translate" || it.type === "dictation") {
-    const prompt = it.type === "cloze" ? `<div class="q">${esc(s.cloze)}</div><p class="muted">${esc(s.es)}</p>`
-      : it.type === "translate" ? `<div class="q">${esc(s.es)}</div><button class="speak" id="hint">💡 Pista</button><p class="muted small" id="hn"></p>`
-      : `<div class="card center"><p class="sub">Escribe exactamente lo que oyes.</p><div class="btns"><button class="btn" id="pl">🔊 Escuchar</button><button class="btn secondary" id="sl">🐢 Lento</button></div></div>`;
-    view.innerHTML = head() + prompt + `<input type="text" id="an" placeholder="${it.type === "cloze" ? "Escribe la palabra que falta" : "Escribe en inglés..."}" autocomplete="off" autocapitalize="off" spellcheck="false">
-      <div class="btns"><button class="btn good" id="ck">Revisar</button><button class="btn secondary" id="idk">No sé</button></div>`;
-    if (it.type === "dictation") { $("#pl").onclick = () => speak(s.en); $("#sl").onclick = () => speak(s.en, true); setTimeout(() => speak(s.en), 350); }
-    if (it.type === "translate") $("#hint").onclick = () => { const w = s.en.split(" "); $("#hn").textContent = `Empieza con «${w[0]}» y tiene ${w.length} palabras.`; };
+    let hintLvl = 0;
+    body.innerHTML = (it.type === "cloze" ? `<div class="prompt">${esc(s.cloze).replace("____", '<span class="acc">____</span>')}</div><p class="prompt-es">${esc(s.es)}</p>`
+      : it.type === "translate" ? `<div class="prompt">${esc(s.es)}</div><p class="prompt-es">Escríbelo en inglés.</p>`
+      : `<p class="prompt-es">Escribe exactamente lo que oyes.</p>${audioBtns()}`)
+      + `<input type="text" id="an" placeholder="${it.type === "cloze" ? "La palabra que falta" : "Escribe en inglés..."}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+      ${it.type !== "dictation" ? `<button class="speak" id="hint">💡 Pista</button>` : ""}<p class="hint-box" id="hn"></p>`;
+    setButtons(`<button class="btn secondary" id="idk" style="flex:.6">No sé</button><button class="btn" id="ck" disabled>Revisar</button>`);
+    if (it.type === "dictation") bindAudio(s.en);
+    const hintBtn = $("#hint");
+    if (hintBtn) hintBtn.onclick = () => {
+      hintLvl++;
+      const target = it.type === "cloze" ? s.target : s.en;
+      const words = target.split(" ");
+      if (hintLvl === 1) $("#hn").textContent = it.type === "cloze" ? `Empieza con «${target[0]}» · ${target.length} letras` : `${words.length} palabras · empieza con «${words[0]}»`;
+      else { $("#hn").textContent = words.map((w) => w[0] + w.slice(1).replace(/[a-z]/gi, "_")).join(" "); hintBtn.remove(); }
+    };
+    $("#an").oninput = (e) => { $("#ck").disabled = !e.target.value.trim(); };
     const check = (giveUp) => {
       if (answered) return;
       const val = giveUp ? "" : $("#an").value;
-      let correct, html;
+      if (!giveUp && !val.trim()) return;
+      let correct, html, opts = { typed: val };
       if (it.type === "cloze") {
-        correct = norm(val).join(" ") === norm(s.target).join(" ") && norm(val).length > 0;
-        html = `Falta: <b>${esc(s.target)}</b>${sol(s)}`;
+        correct = norm(val).length > 0 && (norm(val).join(" ") === norm(s.target).join(" ") || norm(s.cloze.replace("____", val)).join(" ") === norm(s.en).join(" "));
+        html = `${correct ? "" : `Faltaba: <b>${esc(s.target)}</b>`}${sol(s)}${correct ? "" : ruleFor(s)}`;
       } else if (it.type === "translate") {
         const r = bestMatch(val, [s.en, ...s.alts]); correct = r.pct >= 85;
-        html = (correct && r.pct < 100 ? `Casi perfecto. ` : "") + (val ? diffHtml(compare(s.en, val)) : "") + sol(s);
+        html = (correct && r.pct < 100 ? "Casi perfecto, fíjate en lo subrayado." : "") + (val ? diffHtml(compare(r.a, val)) : "") + sol(s) + (correct ? "" : ruleFor(s));
+        if (!correct && val.trim()) opts.dispute = true;
+        if (!correct && r.pct >= 60) opts.title = "Casi";
       } else {
         const r = compare(s.en, val); correct = r.pct >= 85;
         html = (val ? diffHtml(r) : "") + sol(s);
+        if (!correct && r.pct >= 60) opts.title = "Casi";
+        if (!correct && val.trim()) opts.dispute = true;
         if (correct) bump("dict");
       }
-      $("#ck").disabled = true; $("#idk").disabled = true; feedback(correct, html);
+      if (hintLvl && correct) html = `<span class="muted small">Con pista 💡 · </span>` + html;
+      feedback(correct, html, opts);
     };
     $("#ck").onclick = () => check(false); $("#idk").onclick = () => check(true);
-    $("#an").addEventListener("keydown", (e) => { if (e.key === "Enter") check(false); });
-    if (it.type !== "dictation") setTimeout(() => $("#an") && $("#an").focus(), 200);
+    $("#an").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); check(false); } });
   } else if (it.type === "speak") {
-    view.innerHTML = head() + `<div class="card center"><div class="q" style="margin-top:0">${esc(s.en)}</div><p class="muted">${esc(s.es)}</p>
-      <div class="btns"><button class="btn secondary" id="pl">🔊 Escuchar</button><button class="btn secondary" id="sl">🐢 Lento</button></div></div>
-      <p class="sub center">Escúchala y dila en voz alta, imitando el ritmo.</p>
-      <div class="btns">${SR ? `<button class="btn" id="mic">🎤 Decirla (te califico)</button>` : ""}<button class="btn ${SR ? "secondary" : ""}" id="self">Ya la dije 3 veces</button></div>
-      <p class="muted small center" id="heard">${SR ? "El micrófono necesita internet." : ""}</p>`;
-    $("#pl").onclick = () => speak(s.en); $("#sl").onclick = () => speak(s.en, true);
-    setTimeout(() => speak(s.en), 350);
-    $("#self").onclick = () => { bump("speak"); feedback(true, "Sigue imitando el ritmo y la entonación."); };
+    body.innerHTML = `<div class="prompt">${esc(s.en)}</div><p class="prompt-es">${esc(s.es)}</p>${audioBtns()}
+      <p class="sub center">Escúchala y repítela en voz alta 3 veces, imitando el ritmo.</p>
+      ${SR ? `<button class="btn good" id="mic">🎤 Decirla y que me califique</button><p class="muted small center" id="heard" style="margin-top:10px">El micrófono necesita internet.</p>` : ""}`;
+    bindAudio(s.en);
+    setButtons(`<button class="btn" id="self">Ya la dije 3 veces</button>`);
+    const self = () => { bump("speak"); feedback(true, "Sigue imitando el ritmo y la entonación."); };
+    $("#self").onclick = self; setEnter(self);
     if (SR) $("#mic").onclick = () => {
-      $("#heard").textContent = "Escuchando...";
+      $("#heard").textContent = "🎙️ Escuchando...";
       listenOnce((alts) => {
-        const r = bestMatch(s.en, alts.map(String)); const said = alts[0] || "";
-        const pct = compare(s.en, said).pct;
-        $("#heard").innerHTML = `Entendí: «${esc(said)}» · ${pct}%`;
-        if (pct >= 75) { bump("speak"); feedback(true, diffHtml(compare(s.en, said))); }
-        else toast("Inténtalo otra vez, más despacio");
-        void r;
+        const said = alts[0] || ""; const r = compare(s.en, said);
+        $("#heard").innerHTML = `Entendí: «${esc(said)}» · ${r.pct}%`;
+        if (r.pct >= 75) { bump("speak"); feedback(true, diffHtml(r)); }
+        else { beep(false); $("#heard").innerHTML += "<br>Inténtalo otra vez, más despacio y marcando cada palabra."; }
       }, (err) => { $("#heard").textContent = err === "not-allowed" ? "Permite el micrófono o usa «Ya la dije»." : "No se pudo usar el micrófono (¿sin internet?). Usa «Ya la dije»."; });
     };
   }
@@ -453,20 +607,23 @@ function renderItem(it, done, total, cb) {
 
 /* ---------- Rutas de práctica ---------- */
 routes.sesion = () => runSession(buildDaily(), "Sesión del día", true);
+routes.rapida = () => runSession(buildDaily(6), "Sesión rápida", true);
 routes.errores = () => runSession(buildErrors(), "Mis errores", false);
 routes.sonidos = () => runSession(Array.from({ length: 12 }, pairItem), "Sonidos difíciles", false);
 
 routes.practicar = () => {
   setTitle("Practicar", false);
   const errors = Object.values(sstate()).filter((s) => s.wrong > 0 && s.lvl < 3).length;
-  const best = store.get("best", {});
-  const row = (h, e, t, d) => `<a class="row" href="${h}"><span class="emoji">${e}</span><span class="grow"><span class="t">${t}</span><div class="d">${d}</div></span></a>`;
+  const best = store.get("best", {}); const saved = savedList().length;
+  const row = (h, e, t, d) => `<a class="row" href="${h}"><span class="emoji">${e}</span><span class="grow"><span class="t">${t}</span><div class="d">${d}</div></span><span class="chev">›</span></a>`;
   view.innerHTML = `
     <h3 style="margin-top:4px">Lo principal</h3>
     <div class="list">
-      ${row("#/sesion", "⚡", "Sesión del día", "20 ejercicios mezclados según tu nivel y tus errores")}
+      ${row("#/sesion", "⚡", "Sesión del día", `${sessionSize()} ejercicios mezclados según tu nivel y tus errores`)}
+      ${row("#/rapida", "⏳", "Sesión rápida", "6 ejercicios · cuenta para tu reto en días pesados")}
       ${row("#/historias", "📖", "Historias", "Input comprensible: escucha, lee y responde")}
       ${row("#/errores", "🎯", "Mis errores", errors ? `${errors} oraciones por dominar` : "Aún no tienes errores guardados")}
+      ${row("#/guardadas", "⭐", "Mis frases guardadas", saved ? `${saved} frases · repásalas como tarjetas` : "Guarda frases con ⭐ en ejercicios e historias")}
     </div>
     <h3>Entrenamientos</h3>
     <div class="list">
@@ -478,6 +635,17 @@ routes.practicar = () => {
       ${row("#/dictado", "🎧", "Dictado libre", "Oraciones de A1 a B2")}
       ${row("#/quiz", "✅", "Quiz de gramática", "Opción múltiple con explicación")}
     </div>`;
+};
+
+routes.guardadas = () => {
+  setTitle("Mis frases", true);
+  const l = savedList();
+  if (!l.length) { view.innerHTML = `<div class="card center"><div class="big">⭐</div><h2>Aún no guardas frases</h2><p class="sub">Toca ⭐ en un ejercicio o en una línea de historia para guardar las frases que quieras usar.</p><a class="btn" href="#/historias">Ir a historias</a></div>`; return; }
+  view.innerHTML = `<a class="btn" href="#/estudiar/mias">Repasar como tarjetas</a>
+    <h3>${l.length} frases</h3><div class="list mistakes">${l.slice().reverse().map((x) => `<div class="row"><button class="mini say" data-t="${esc(x.en)}" aria-label="Escuchar">🔊</button>
+      <span class="grow"><span class="t">${esc(x.en)}</span><div class="d">${esc(x.es)}</div></span><button class="mini del" data-en="${esc(x.en)}" aria-label="Quitar">✕</button></div>`).join("")}</div>`;
+  view.querySelectorAll(".say").forEach((b) => (b.onclick = () => speak(b.dataset.t)));
+  view.querySelectorAll(".del").forEach((b) => (b.onclick = () => { toggleSaved(b.dataset.en); render(); }));
 };
 
 /* Historias */
@@ -492,12 +660,14 @@ routes.historia = (id) => {
   const st = STORIES.find((x) => x.id === id) || STORIES[0];
   setTitle(st.title, true);
   view.innerHTML = `<div class="btns" style="margin-top:0"><button class="btn" id="all">🔊 Escuchar toda</button><button class="btn secondary" id="stop">■ Parar</button></div>
+    <p class="sub" style="margin-top:12px">Toca una línea para oírla · <b>ES</b> para ver la traducción · ⭐ para guardarla.</p>
     <div class="card story">${st.lines.map(([en, es], i) => `<div class="line"><span class="en" data-i="${i}">${esc(en)}</span>
-      <button class="es-t" data-i="${i}">ES</button><div class="es" id="es${i}" hidden>${esc(es)}</div></div>`).join("")}</div>
+      <button class="mini es-t" data-i="${i}">ES</button><button class="mini star ${isSaved(en) ? "on" : ""}" data-i="${i}" aria-label="Guardar">⭐</button><div class="es" id="es${i}" hidden>${esc(es)}</div></div>`).join("")}</div>
     <h3>Preguntas</h3><div id="qs"></div>`;
   $("#all").onclick = () => speakAll(st.lines.map((l) => l[0]));
   $("#stop").onclick = () => speechSynthesis.cancel();
-  view.querySelectorAll(".en").forEach((el) => (el.onclick = () => speak(st.lines[Number(el.dataset.i)][0])));
+  view.querySelectorAll(".en").forEach((el) => (el.onclick = () => { view.querySelectorAll(".en").forEach((x) => x.classList.remove("playing")); el.classList.add("playing"); speak(st.lines[Number(el.dataset.i)][0]); }));
+  view.querySelectorAll(".star").forEach((b) => (b.onclick = () => { const [en, es] = st.lines[Number(b.dataset.i)]; b.classList.toggle("on", toggleSaved(en, es, st.title)); }));
   view.querySelectorAll(".es-t").forEach((b) => (b.onclick = () => { const e = $("#es" + b.dataset.i); e.hidden = !e.hidden; }));
   let answered = 0, right = 0;
   $("#qs").innerHTML = st.q.map(([q, opts], k) => `<div class="card"><div class="t" style="margin-bottom:8px">${esc(q)}</div>
@@ -506,11 +676,11 @@ routes.historia = (id) => {
     const b = e.target.closest(".opt"); if (!b) return; const box = b.parentElement; if (box.dataset.done) return;
     box.dataset.done = 1; const k = Number(box.dataset.k), ans = st.q[k][2];
     box.querySelectorAll(".opt").forEach((o) => Number(o.dataset.j) === ans && o.classList.add("right"));
-    if (Number(b.dataset.j) !== ans) b.classList.add("wrong"); else right++;
+    if (Number(b.dataset.j) !== ans) { b.classList.add("wrong"); beep(false); } else { right++; beep(true); }
     answered++;
     if (answered === st.q.length) {
       const r = store.get("stories", {}); r[st.id] = Math.max(r[st.id] || 0, right); store.set("stories", r);
-      bump("story");
+      bump("story"); bump("xp", XP.story + right * 5);
       const d = document.createElement("div");
       d.innerHTML = `<div class="feedback ${right === 3 ? "ok" : "no"}"><b>${right}/3.</b> ${right === 3 ? "¡Entendiste todo!" : "Vuelve a escucharla mañana: la segunda vez se entiende mucho más."}</div><a class="btn" href="#/">Volver al inicio</a>`;
       $("#qs").appendChild(d);
@@ -573,9 +743,9 @@ routes.hablar = (idx) => {
 /* Tarjetas */
 routes.tarjetas = () => {
   setTitle("Tarjetas", true);
-  const icons = { verbos: "🔁", frases: "💬", ti: "💻", phrasal: "🧩", falsos: "⚠️" };
+  const icons = { mias: "⭐", verbos: "🔁", frases: "💬", ti: "💻", phrasal: "🧩", falsos: "⚠️" };
   view.innerHTML = `<p class="sub">Piensa la respuesta antes de voltear. Las que fallas vuelven pronto.</p>
-    <div class="list">${Object.entries(DECKS).map(([k, d]) => {
+    <div class="list">${deckKeys().map((k) => [k, deckOf(k)]).map(([k, d]) => {
       const n = dueCards(k).length + newCards(k).length;
       const learned = d.cards.filter((c) => (srsAll()[c.id] || {}).box >= 3).length;
       return `<a class="row" href="#/estudiar/${k}"><span class="emoji">${icons[k]}</span><span class="grow"><span class="t">${d.name}</span><div class="d">${d.desc} · ${learned}/${d.cards.length} dominadas</div></span>
@@ -583,7 +753,7 @@ routes.tarjetas = () => {
     }).join("")}</div>`;
 };
 routes.estudiar = (k) => {
-  const deck = DECKS[k]; if (!deck) return go("#/tarjetas");
+  const deck = deckOf(k); if (!deck || !deck.cards.length) return go("#/tarjetas");
   setTitle(deck.name, true);
   const tag = (c) => Object.assign({}, c, { deck: k });
   const queue = shuffle(dueCards(k)).slice(0, 25).map(tag).concat(newCards(k).map(tag));
@@ -602,7 +772,7 @@ routes.estudiar = (k) => {
     $("#fl").onclick = () => { $("#bk").hidden = false; $("#gr").hidden = false; $("#hi").hidden = true; };
     $("#gr").onclick = (e) => {
       const b = e.target.closest("button"); if (!b) return; const g = Number(b.dataset.g);
-      gradeCard(c, g); queue.shift(); if (g === 0) queue.push(c); else { done++; bump("cards"); } show();
+      gradeCard(c, g); queue.shift(); if (g === 0) queue.push(c); else { done++; bump("cards"); bump("xp", XP.card); } show();
     };
   };
   show();
@@ -628,7 +798,7 @@ routes.quiz = (level = "Todos") => {
     $("#op").onclick = (e) => {
       const b = e.target.closest(".opt"); if (!b || $("#op").dataset.l) return; $("#op").dataset.l = 1;
       view.querySelectorAll(".opt").forEach((o) => Number(o.dataset.k) === ans && o.classList.add("right"));
-      const ok = Number(b.dataset.k) === ans; if (ok) { score++; bump("quiz"); } else b.classList.add("wrong");
+      const ok = Number(b.dataset.k) === ans; beep(ok); if (ok) { score++; bump("quiz"); bump("xp", XP.quiz); } else b.classList.add("wrong");
       $("#fb").innerHTML = `<div class="feedback ${ok ? "ok" : "no"}"><b>${ok ? "¡Correcto!" : "Casi."}</b> ${esc(why)}</div><button class="btn" id="nx">Siguiente</button>`;
       $("#nx").onclick = () => { i++; show(); };
     };
@@ -737,7 +907,7 @@ Oraciones que más fallo:
 ${worst || "- (ninguna todavía)"}`;
 }
 /* ---------- Exportar / importar progreso (JSON) ---------- */
-const DATA_KEYS = ["days", "sent", "srs", "best", "stories", "profile", "rate", "newCount"];
+const DATA_KEYS = ["days", "sent", "srs", "best", "stories", "profile", "rate", "newCount", "saved", "disputes", "flags", "notes", "lastExport"];
 const EXPORT_EVERY = 7;
 const daysBetween = (a, b) => { const p = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }; return Math.round((p(b) - p(a)) / 86400000); };
 function buildExport() {
@@ -746,8 +916,15 @@ function buildExport() {
   const items = week.reduce((n, d) => n + (d.items || 0), 0), ok = week.reduce((n, d) => n + (d.ok || 0), 0);
   const data = {}; DATA_KEYS.forEach((k) => { const v = store.get(k, undefined); if (v !== undefined) data[k] = v; });
   return {
-    app: "ingles-diario", version: 3, exported: new Date().toISOString(),
+    app: "ingles-diario", version: 4, exported: new Date().toISOString(),
+    paraClaude: {
+      notas: store.get("notes", ""),
+      respuestasQueDiceQueSonCorrectas: store.get("disputes", []).slice(-30),
+      reportesDeProblemas: store.get("flags", []).slice(-30),
+      frasesGuardadas: savedList().map((x) => x.en),
+    },
     summary: {
+      nombre: p.name, metas: p.goals, intereses: p.interests, minutosAlDia: p.minutes, xpTotal: totalXP(),
       level: p.level, diagnostico: p.diag, unidadActual: curUnit(), unidadTitulo: UNITS[curUnit() - 1].title,
       racha: streak(), diasActivosSemana: week.length, ejerciciosSemana: items, aciertosSemanaPct: items ? Math.round((ok / items) * 100) : 0,
       diasPracticadosTotal: Object.values(days).filter((d) => d.items || d.cards || d.story || d.quiz).length,
@@ -797,6 +974,10 @@ routes.reporte = () => {
     <button class="btn secondary" id="cj">Copiar JSON (si no puedes adjuntar)</button>
     <h3>Resumen rápido</h3>
     <pre class="report" id="rp">${esc(txt)}</pre><button class="btn secondary" id="cp">Copiar resumen</button>
+    <h3>Notas para Claude</h3>
+    <p class="sub">¿Qué quieres que mejore, agregue o cambie? Temas, ejercicios, algo que no funciona... Va dentro del archivo.</p>
+    <textarea id="nt" placeholder="Ej.: quiero más frases para entrevistas de trabajo; el dictado va muy rápido...">${esc(store.get("notes", ""))}</textarea>
+    <p class="muted small">${store.get("flags", []).length} reportes y ${store.get("disputes", []).length} respuestas marcadas como correctas van incluidos.</p>
     <h3>Restaurar</h3>
     <p class="sub">Si cambias de celular o borras la app, carga tu último archivo y recuperas todo.</p>
     <button class="btn ghost" id="im">📥 Cargar progreso desde archivo</button><input type="file" id="file" accept=".json,application/json" hidden>
@@ -805,6 +986,7 @@ routes.reporte = () => {
     try { await navigator.clipboard.writeText(s); $("#msg").textContent = "¡Copiado! Pégalo en el chat."; return true; }
     catch { if (el) { const r = document.createRange(); r.selectNodeContents(el); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); } $("#msg").textContent = "No se pudo copiar automáticamente."; return false; }
   };
+  $("#nt").oninput = (e) => store.set("notes", e.target.value);
   $("#ex").onclick = () => shareExport().then(() => setTimeout(render, 600));
   $("#cj").onclick = async () => { if (await copy(JSON.stringify(buildExport()))) markExported(); };
   $("#cp").onclick = () => copy(txt, $("#rp"));
@@ -822,39 +1004,61 @@ routes.progreso = () => {
   const days = store.get("days", {}); const p = profile();
   const totalItems = Object.values(days).reduce((n, d) => n + (d.items || 0), 0);
   const totalOk = Object.values(days).reduce((n, d) => n + (d.ok || 0), 0);
-  const active = Object.values(days).filter((d) => d.items || d.cards || d.story || d.quiz).length;
-  const cells = []; const t = today();
+  const t = today(); const WD = ["D", "L", "M", "M", "J", "V", "S"];
+  const week = Array.from({ length: 7 }, (_, k) => addDays(t, k - 6)).map((d) => { const [y, m, dd] = d.split("-").map(Number); return { d, xp: (days[d] || {}).xp || 0, wd: WD[new Date(y, m - 1, dd).getDay()] }; });
+  const maxXp = Math.max(30, ...week.map((w) => w.xp));
+  const cells = [];
   for (let k = 27; k >= 0; k--) {
     const d = addDays(t, -k), log = days[d];
     const cls = log && log.done ? "full" : log && (log.items || log.cards || log.story || log.quiz) ? "part" : "";
     cells.push(`<span class="${cls}">${Number(d.slice(8))}</span>`);
   }
   const rate = store.get("rate", 0.9);
+  const sw = (id, on, label, desc) => `<div class="setting"><span><span class="t">${label}</span><div class="muted small">${desc}</div></span><button class="switch ${on ? "on" : ""}" id="${id}" role="switch" aria-checked="${on}" aria-label="${label}"></button></div>`;
   view.innerHTML = `
-    <a class="btn" href="#/reporte" style="margin-bottom:14px">📤 Enviar progreso a Claude / respaldo</a>
+    <a class="btn" href="#/reporte" style="margin-bottom:16px">📤 Enviar progreso a Claude / respaldo</a>
     <div class="stats">
       <div class="stat"><b>🔥 ${streak()}</b><span>días seguidos</span></div>
-      <div class="stat"><b>${active}</b><span>días practicados</span></div>
+      <div class="stat"><b>⚡ ${totalXP()}</b><span>XP total</span></div>
       <div class="stat"><b>${totalItems}</b><span>ejercicios hechos</span></div>
       <div class="stat"><b>${totalItems ? Math.round((totalOk / totalItems) * 100) : 0}%</b><span>aciertos</span></div>
     </div>
+    <h3>XP de los últimos 7 días</h3>
+    <div class="card"><div class="bars">${week.map((w) => `<div><b>${w.xp || ""}</b><i class="${w.xp ? "" : "zero"}" style="height:${Math.max(4, (w.xp / maxXp) * 90)}px"></i>${w.d === t ? "Hoy" : w.wd}</div>`).join("")}</div></div>
     <h3>Últimas 4 semanas</h3>
     <div class="card"><div class="cal">${cells.join("")}</div><p class="muted small" style="margin:10px 0 0">Verde: reto completo · Naranja: practicaste algo</p></div>
-    <h3>Mi nivel de inicio</h3>
-    <p class="sub">Diagnóstico: ${esc(p.diag)}. Cambiarlo te mueve al inicio de ese nivel.</p>
-    <div class="chips">${Object.keys(LEVEL_START).map((l) => `<button class="chip ${p.level === l ? "on" : ""}" data-lv="${l}">${l}</button>`).join("")}</div>
-    <h3>Velocidad de la voz</h3>
-    <div class="chips">${[[0.7, "Lenta"], [0.9, "Normal"], [1.05, "Rápida"]].map(([r, l]) => `<button class="chip ${Math.abs(rate - r) < 0.01 ? "on" : ""}" data-r="${r}">${l}</button>`).join("")}</div>
-    <h3>Respaldo</h3><p class="sub">Tu progreso vive solo en este celular. Si borras el ícono de la pantalla de inicio, se borra.</p>
-    <button class="btn secondary" id="rs">Borrar mi progreso</button><div id="cf"></div>`;
+    <h3>Dominio por unidad</h3>
+    <div class="card">${UNITS.map((u) => { const m = unitMastery(u.id); return `<div style="margin-bottom:10px"><div class="counter" style="margin-bottom:4px"><span>${u.id}. ${esc(u.title)}</span><span>${m}%</span></div><div class="progress thin ${m >= 80 ? "good" : ""}" style="margin-top:0"><span style="width:${m}%"></span></div></div>`; }).join("")}</div>
+    <h3>Ajustes</h3>
+    <div class="card">
+      <div class="setting"><span><span class="t">Tiempo al día</span><div class="muted small">${sessionSize()} ejercicios por sesión</div></span></div>
+      <div class="chips">${[5, 10, 15, 20].map((m) => `<button class="chip ${p.minutes === m ? "on" : ""}" data-mn="${m}">${m} min</button>`).join("")}</div>
+      <div class="setting"><span><span class="t">Velocidad de la voz</span></span></div>
+      <div class="chips">${[[0.7, "Lenta"], [0.9, "Normal"], [1.05, "Rápida"]].map(([r, l]) => `<button class="chip ${Math.abs(rate - r) < 0.01 ? "on" : ""}" data-r="${r}">${l}</button>`).join("")}</div>
+      ${sw("snd", p.sound, "Sonidos", "Al acertar y fallar")}
+      ${sw("bigt", p.big, "Letra grande", "Agranda toda la app")}
+      <div class="setting"><span><span class="t">Nivel de inicio</span><div class="muted small">Diagnóstico ${esc(p.diag)}. Cambiarlo te mueve al inicio de ese nivel.</div></span></div>
+      <div class="chips">${Object.keys(LEVEL_START).map((l) => `<button class="chip ${p.level === l ? "on" : ""}" data-lv="${l}">${l}</button>`).join("")}</div>
+      <a class="btn secondary" href="#/bienvenida" style="margin-top:6px">Cambiar nombre, metas e intereses</a>
+    </div>
+    <h3>Zona de cuidado</h3>
+    <p class="sub">Tu progreso vive solo en este celular. Exporta tu respaldo antes de borrar el ícono.</p>
+    <button class="btn secondary" id="rs">Borrar mi progreso</button>`;
+  view.querySelectorAll("[data-mn]").forEach((b) => (b.onclick = () => { setProfile({ minutes: Number(b.dataset.mn) }); render(); }));
   view.querySelectorAll("[data-lv]").forEach((b) => (b.onclick = () => { setProfile({ level: b.dataset.lv, unit: LEVEL_START[b.dataset.lv] }); toast(`Empiezas en ${b.dataset.lv}`); render(); }));
   view.querySelectorAll("[data-r]").forEach((b) => (b.onclick = () => { store.set("rate", Number(b.dataset.r)); speak("This is how I sound."); render(); }));
+  $("#snd").onclick = () => { setProfile({ sound: !p.sound }); if (!p.sound) beep(true); render(); };
+  $("#bigt").onclick = () => { setProfile({ big: !p.big }); applyPrefs(); render(); };
   $("#rs").onclick = () => {
-    $("#cf").innerHTML = `<div class="feedback no">¿Seguro? Se borra tu racha, tu ruta y tus récords.</div><button class="btn again" id="yes">Sí, borrar todo</button>`;
-    $("#yes").onclick = () => { ["days", "srs", "best", "newCount", "sent", "stories", "profile"].forEach((k) => localStorage.removeItem("ing:" + k)); toast("Progreso borrado"); render(); };
+    const m = document.createElement("div"); m.className = "sheet-bg";
+    m.innerHTML = `<div class="sheet"><h2>¿Borrar todo tu progreso?</h2><p class="sub" style="margin:0">Se borran tu racha, tu ruta, tus frases y tus récords. No se puede deshacer.</p>
+      <button class="btn again" id="yes">Sí, borrar todo</button><button class="btn ghost" id="no">Cancelar</button></div>`;
+    document.body.appendChild(m); m.querySelector("#no").onclick = () => m.remove();
+    m.querySelector("#yes").onclick = () => { m.remove(); Object.keys(localStorage).filter((k) => k.startsWith("ing:")).forEach((k) => localStorage.removeItem(k)); toast("Progreso borrado"); render(); };
   };
 };
 
 /* ---------- Arranque ---------- */
+applyPrefs();
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 render();
