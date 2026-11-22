@@ -1,8 +1,8 @@
 // Guarda la app en el celular para que funcione sin internet.
 // Con internet siempre intenta bajar lo más nuevo; sin internet usa lo guardado.
-const VERSION = "ingles-v9";
+const VERSION = "ingles-v10";
 const FILES = [
-  "./", "index.html", "styles.css", "app.js", "data.js", "extra.js", "content.js", "manifest.webmanifest",
+  "./", "index.html", "styles.css", "app.js", "data.js", "extra.js", "a1.js", "errors.js", "dict.js", "content.js", "manifest.webmanifest",
   "icon-192.png", "icon-512.png", "apple-touch-icon.png", "maskable-512.png",
   "guias/g0.html", "guias/g1.html", "guias/g2.html", "guias/g3.html", "guias/g4.html", "guias/g5.html", "guias/g6.html",
   "guias/g0-0.png", "guias/g1-0.png", "guias/g2-0.png", "guias/g4-0.png",

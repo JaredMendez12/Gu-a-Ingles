@@ -188,7 +188,7 @@ const routes = {};
 let cleanup = null;
 const go = (h) => { location.hash = h; };
 function setTitle(t, back) { $("#title").textContent = t; $("#back").hidden = !back; }
-const TAB = { home: "home", ruta: "ruta", unidad: "ruta", practicar: "practicar", sesion: "practicar", historias: "practicar", historia: "practicar", sonidos: "practicar", errores: "practicar", tarjetas: "practicar", estudiar: "practicar", quiz: "practicar", dictado: "practicar", repite: "practicar", contrarreloj: "practicar", hablar: "practicar", consulta: "consulta", progreso: "progreso", metodo: "home", reporte: "progreso", bienvenida: "progreso", silenciosa: "practicar", parejas: "practicar", corrige: "practicar", palabras: "practicar", guias: "consulta", guia: "consulta", rapida: "practicar", guardadas: "practicar" };
+const TAB = { home: "home", metodo: "home", aprender: "aprender", ruta: "aprender", unidad: "aprender", tema: "aprender", guias: "aprender", guia: "aprender", consulta: "aprender", practicar: "practicar", sesion: "practicar", rapida: "practicar", silenciosa: "practicar", historias: "practicar", historia: "practicar", sonidos: "practicar", quiz: "practicar", dictado: "practicar", repite: "practicar", contrarreloj: "practicar", hablar: "practicar", parejas: "practicar", corrige: "practicar", palabras: "practicar", repaso: "repaso", repasar: "repaso", errores: "repaso", guardadas: "repaso", tarjetas: "repaso", estudiar: "repaso", progreso: "progreso", reporte: "progreso", bienvenida: "progreso" };
 function render() {
   if (cleanup) { cleanup(); cleanup = null; }
   if (window.speechSynthesis) speechSynthesis.cancel();
@@ -264,11 +264,12 @@ routes.home = () => {
     </div>
     ${exportDue() ? `<a class="card notice" href="#/reporte"><div class="t">📤 Toca mandarle tu progreso a Claude</div>
       <div class="muted small" style="margin-top:4px">Exporta el archivo y adjúntalo en el chat para que ajuste tu plan.</div></a>` : ""}
-    <a class="card" href="#/unidad/${u.id}">
-      <div class="muted small">Unidad ${u.id} de ${UNITS.length} · ${u.level}</div>
+    <a class="card topic-card ${LEVEL_COLOR[u.level]}" href="#/tema/${u.id}">
+      <div class="muted small"><span class="lvl ${LEVEL_COLOR[u.level]}">${u.level}</span> Tema ${u.id} de ${UNITS.length}</div>
       <div class="big-t">${esc(u.title)}</div>
       <div class="progress ${m >= 80 ? "good" : ""}" style="margin-top:10px"><span style="width:${m}%"></span></div>
-      <div class="muted small" style="margin-top:6px">${m}% dominado · ${m >= 80 ? "¡lista! La siguiente ya está abierta" : `te falta ${80 - m}% para abrir la siguiente`}</div>
+      <div class="muted small" style="margin-top:6px">${m}% dominado · ${m >= 80 ? "¡listo! El siguiente ya está abierto" : `te falta ${80 - m}% para abrir el siguiente`}</div>
+      ${!readMap()[u.key] && u.ficha ? `<div class="next-step">📖 Siguiente paso: lee la ficha del tema (3 min)</div>` : ""}
     </a>
     <div class="stats three">
       <div class="stat"><b>🔥 ${streak()}</b><span>racha</span></div>
@@ -355,7 +356,7 @@ function typeFor(lvl, easy) {
 }
 const itemFor = (s) => ({ kind: "sentence", s, type: typeFor((stateOf(s.id) || { lvl: 0 }).lvl) });
 const pairItem = () => ({ kind: "pair", pair: rand(PAIRS) });
-const fixItem = (f) => ({ kind: "fix", fix: f || rand(FIX) });
+const fixItem = (f) => ({ kind: "fix", fix: f && f.w ? f : rand(FIX2) });
 const matchItem = (cat) => ({ kind: "match", words: pick(cat ? VOCAB_LIST.filter((w) => w.cat === cat) : VOCAB_LIST, 5) });
 const wordItem = (w) => ({ kind: "word", w, rev: Math.random() < 0.4 });
 const extraItem = () => (silent() ? fixItem() : pairItem());
@@ -364,7 +365,8 @@ function buildDaily(size = sessionSize()) {
   const pool = SENTENCES.filter((s) => s.unit <= cu);
   const nDue = Math.round(size * 0.45), nNew = Math.round(size * 0.3);
   const due = pool.filter((s) => st[s.id] && st[s.id].due <= t).sort((a, b) => st[a.id].due.localeCompare(st[b.id].due)).slice(0, nDue);
-  const fresh = SENTENCES.filter((s) => s.unit === cu && !st[s.id]).slice(0, nNew);
+  const fu = (UNITS.find((u) => u.id <= cu && SENTENCES.some((s) => s.unit === u.id && !st[s.id])) || { id: cu }).id;
+  const fresh = SENTENCES.filter((s) => (s.unit === fu || s.unit === cu) && !st[s.id]).slice(0, nNew);
   const chosen = new Set([...due, ...fresh].map((s) => s.id));
   const fill = shuffle(pool.filter((s) => !chosen.has(s.id))).sort((a, b) => ((st[a.id] || {}).lvl || 0) - ((st[b.id] || {}).lvl || 0));
   const nPairs = size >= 15 ? 2 : 1;
@@ -410,7 +412,7 @@ function runSession(items, title, daily) {
     return;
   }
   document.body.classList.add("focus");
-  const queue = items.slice(); const total = items.length; let done = 0, ok = 0, xp = 0, combo = 0; const retried = new Set(); const missed = [];
+  const queue = items.slice(); let total = items.length; let done = 0, ok = 0, xp = 0, combo = 0; const retried = new Set(); const missed = [];
   let onEnter = null;
   const keyH = (e) => { if (e.key === "Enter" && onEnter && !(e.target && e.target.tagName === "INPUT")) { e.preventDefault(); onEnter(); } };
   document.addEventListener("keydown", keyH);
@@ -418,7 +420,7 @@ function runSession(items, title, daily) {
   const next = () => {
     if (!queue.length) return finish();
     const it = queue.shift();
-    renderItem(it, { done, total, xp, combo }, (correct) => {
+    renderItem(it, { done, total, xp, combo, inject: (arr) => { queue.unshift(...arr); total += arr.length; } }, (correct) => {
       done++;
       if (correct) { ok++; combo++; xp += XP.ok + (combo >= 5 ? 5 : 0); } else { combo = 0; xp += XP.wrong; }
       if (it.kind === "sentence") gradeSentence(it.s.id, correct);
@@ -477,22 +479,38 @@ function renderItem(it, ctx, cb, setEnter) {
     body.querySelectorAll("button.opt, input").forEach((el) => (el.disabled = true)); body.querySelectorAll(".tile").forEach((el) => (el.style.pointerEvents = "none"));
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     const s = it.kind === "sentence" ? it.s : null;
+    const tKey = s ? s.topic : it.kind === "fix" ? it.fix.t : null;
+    const tU = tKey ? topicOf(tKey) : null;
     if (s && window.speechSynthesis && !silent()) setTimeout(() => speak(s.en), 250);
+    if (!correct) logError(it, opts.typed);
+    let why = "";
+    if (!correct) {
+      const d = opts.exp && opts.typed ? diagnose(opts.exp, opts.typed) : [];
+      if (d.length) why = `<div class="why"><div class="why-t">¿Por qué?</div><ul>${d.map((x) => `<li>${md(x)}</li>`).join("")}</ul></div>`;
+    }
     ab.className = "actionbar " + (correct ? "ok" : "no");
     $("#fbx").innerHTML = `<div class="fb-title">${correct ? "✓ " + rand(PRAISE) : "✗ " + (opts.title || "No exactamente")}</div>
-      <div class="fb-body">${html || ""}</div>
-      ${s ? `<div class="fb-tools"><button class="tool" id="t-say">🔊 Escuchar</button><button class="tool ${isSaved(s.en) ? "on" : ""}" id="t-save">⭐ Guardar</button><button class="tool" id="t-flag">🚩 Reportar</button></div>` : ""}`;
+      <div class="fb-body">${!correct && opts.typed && opts.showTyped !== false ? `<div class="cmp"><span class="lab">Tu respuesta</span><s>${esc(opts.typed)}</s></div>` : ""}${html || ""}${why}</div>
+      <div class="fb-tools">${!correct && tU ? `<button class="tool learn" id="t-learn">📖 Explicación completa</button>` : ""}${!correct && tU ? `<button class="tool learn" id="t-more">🔁 Practicar esto ahora</button>` : ""}
+      ${s ? `<button class="tool ic" id="t-say" aria-label="Escuchar">🔊</button><button class="tool ic ${isSaved(s.en) ? "on" : ""}" id="t-save" aria-label="Guardar">⭐</button><button class="tool ic" id="t-flag" aria-label="Reportar">🚩</button>` : ""}</div>`;
     setButtons(`${opts.dispute ? `<button class="btn secondary sm" id="disp">Mi respuesta era correcta</button>` : ""}<button class="btn ${correct ? "easy" : "again"}" id="nx">Continuar</button>`);
     let final = correct;
     const go_ = () => { setEnter(null); cb(final); };
     $("#nx").onclick = go_; setEnter(go_);
+    if ($("#t-learn")) $("#t-learn").onclick = () => openFicha(tKey);
+    if ($("#t-more")) $("#t-more").onclick = (e) => {
+      const more = pick(SENTENCES.filter((x) => x.topic === tKey && (!s || x.id !== s.id)), 3).map((x) => ({ kind: "sentence", s: x, type: typeFor(1) }));
+      if (ctx.inject) ctx.inject(more);
+      e.currentTarget.textContent = `✓ ${more.length} ejercicios agregados`; e.currentTarget.disabled = true;
+    };
     if (s) {
       $("#t-say").onclick = () => speak(s.en);
-      $("#t-save").onclick = (e) => e.currentTarget.classList.toggle("on", toggleSaved(s.en, s.es, "U" + s.unit));
-      $("#t-flag").onclick = (e) => { logTo("flags", { id: s.id, en: s.en, type: kind, typed: opts.typed || "" }); e.currentTarget.textContent = "🚩 Reportado"; e.currentTarget.disabled = true; toast("Gracias. Va en tu próximo reporte para Claude"); };
+      $("#t-save").onclick = (e) => e.currentTarget.classList.toggle("on", toggleSaved(s.en, s.es, tU ? tU.title : ""));
+      $("#t-flag").onclick = (e) => { logTo("flags", { id: s.id, en: s.en, type: kind, typed: opts.typed || "" }); e.currentTarget.textContent = "✓"; e.currentTarget.disabled = true; toast("Gracias. Va en tu próximo reporte para Claude"); };
     }
     if (opts.dispute) $("#disp").onclick = () => {
       logTo("disputes", { id: s.id, en: s.en, typed: opts.typed || "" }); final = true;
+      const l = errLog(); l.pop(); store.set("errlog", l);
       ab.className = "actionbar ok"; $("#fbx .fb-title").textContent = "✓ Aceptada"; $("#disp").remove(); $("#nx").className = "btn easy";
       toast("Se la mando a Claude para agregarla como válida");
     };
@@ -502,18 +520,22 @@ function renderItem(it, ctx, cb, setEnter) {
   const bindAudio = (text) => { $("#pl").onclick = () => speak(text); $("#sl").onclick = () => speak(text, true); if (!silent()) setTimeout(() => speak(text), 350); };
 
   if (it.kind === "fix") {
-    const [wrong, bad, right, why] = it.fix;
+    const f = it.fix;
     const strip = (w) => w.replace(/[.,!?]/g, "");
-    const words = wrong.split(" "), badW = bad.split(" ");
+    const words = f.w.split(" "), badW = f.bad.split(" ");
     const start = words.findIndex((w, i) => badW.every((b, k) => strip(words[i + k] || "") === b));
     const badIdx = new Set(badW.map((_, k) => start + k));
-    body.innerHTML = `<p class="prompt-es">Esta oración tiene un error típico. Toca la palabra que está mal.</p><div class="tiles fixw" id="fw">${words.map((w, i) => `<button class="tile" data-i="${i}">${esc(w)}</button>`).join("")}</div>`;
+    body.innerHTML = `<p class="prompt-es">Esta oración tiene un error típico de hispanohablantes. Toca la palabra que está mal.</p><div class="tiles fixw" id="fw">${words.map((w, i) => `<button class="tile" data-i="${i}">${esc(w)}</button>`).join("")}</div>`;
     $("#fw").onclick = (e) => {
       const b = e.target.closest(".tile"); if (!b || answered) return;
       const ok = badIdx.has(Number(b.dataset.i));
       body.querySelectorAll(".tile").forEach((t) => badIdx.has(Number(t.dataset.i)) && t.classList.add("right"));
       if (!ok) b.classList.add("wrong");
-      feedback(ok, `Correcto: <div class="sol"><b>${esc(right)}</b></div><div class="rule">📌 ${esc(why)}</div>`);
+      feedback(ok, `<div class="cmp"><span class="lab">Correcta</span><b>${esc(f.r)}</b></div>
+        <div class="why"><div class="why-t">${ok ? "Por qué estaba mal" : `El error era «${esc(f.bad)}»`}</div><p>${md(f.why)}</p></div>
+        ${f.ex && f.ex.length ? `<div class="ex-list"><div class="why-t">Más ejemplos correctos</div>${f.ex.map((x) => `<button class="speak inline ex-say" data-t="${esc(x.replace(/\s*\(.*\)$/, ""))}">${esc(x)}</button>`).join("")}</div>` : ""}`, { typed: strip(b.textContent), showTyped: false });
+      view.querySelectorAll(".ex-say").forEach((x) => (x.onclick = () => speak(x.dataset.t)));
+      document.querySelectorAll(".actionbar .ex-say").forEach((x) => (x.onclick = () => speak(x.dataset.t)));
     };
     return;
   }
@@ -579,7 +601,7 @@ function renderItem(it, ctx, cb, setEnter) {
       const correct = b.dataset.id === s.id;
       body.querySelectorAll(".opt").forEach((o) => o.dataset.id === s.id && o.classList.add("right"));
       if (!correct) b.classList.add("wrong");
-      feedback(correct, sol(s));
+      feedback(correct, sol(s), { typed: b.textContent, showTyped: !correct });
     };
   } else if (it.type === "tiles") {
     const words = s.en.replace(/[.,!?]/g, "").split(/\s+/);
@@ -602,7 +624,7 @@ function renderItem(it, ctx, cb, setEnter) {
       if (answered || !built.length) return;
       const typed = built.map((t) => t.w).join(" ");
       const correct = norm(typed).join(" ") === norm(s.en).join(" ");
-      feedback(correct, correct ? sol(s) : `${diffHtml(compare(s.en, typed))}${sol(s)}${ruleFor(s)}`, { typed });
+      feedback(correct, correct ? sol(s) : `${diffHtml(compare(s.en, typed))}${sol(s)}${ruleFor(s)}`, { typed, exp: s.en });
     };
     $("#ck").onclick = check; setEnter(check);
   } else if (it.type === "cloze" || it.type === "translate" || it.type === "dictation") {
@@ -627,12 +649,12 @@ function renderItem(it, ctx, cb, setEnter) {
       if (answered) return;
       const val = giveUp ? "" : $("#an").value;
       if (!giveUp && !val.trim()) return;
-      let correct, html, opts = { typed: val };
+      let correct, html, opts = { typed: val, exp: it.type === "cloze" ? s.target : s.en };
       if (it.type === "cloze") {
         correct = norm(val).length > 0 && (norm(val).join(" ") === norm(s.target).join(" ") || norm(s.cloze.replace("____", val)).join(" ") === norm(s.en).join(" "));
         html = `${correct ? "" : `Faltaba: <b>${esc(s.target)}</b>`}${sol(s)}${correct ? "" : ruleFor(s)}`;
       } else if (it.type === "translate") {
-        const r = bestMatch(val, [s.en, ...s.alts]); correct = r.pct >= 85;
+        const r = bestMatch(val, [s.en, ...s.alts]); correct = r.pct >= 85; opts.exp = r.a;
         html = (correct && r.pct < 100 ? "Casi perfecto, fíjate en lo subrayado." : "") + (val ? diffHtml(compare(r.a, val)) : "") + sol(s) + (correct ? "" : ruleFor(s));
         if (!correct && val.trim()) opts.dispute = true;
         if (!correct && r.pct >= 60) opts.title = "Casi";
@@ -673,7 +695,7 @@ routes.sesion = () => runSession(buildDaily(), "Sesión del día", true);
 routes.rapida = () => runSession(buildDaily(6), "Sesión rápida", true);
 routes.silenciosa = () => { setProfile({ silent: true }); runSession(buildDaily(), "Sesión silenciosa", true); };
 routes.parejas = (cat) => runSession(Array.from({ length: 5 }, () => matchItem(cat ? decodeURIComponent(cat) : null)), "Parejas", false);
-routes.corrige = () => runSession(pick(FIX, 10).map(fixItem), "Corrige el error", false);
+routes.corrige = () => runSession(pick(FIX2, 10).map(fixItem), "Corrige el error", false);
 routes.palabras = (cat) => {
   if (cat === undefined) {
     setTitle("¿Qué significa?", true);
@@ -692,35 +714,30 @@ routes.sonidos = () => runSession(Array.from({ length: 12 }, pairItem), "Sonidos
 
 routes.practicar = () => {
   setTitle("Practicar", false);
-  const errors = Object.values(sstate()).filter((s) => s.wrong > 0 && s.lvl < 3).length;
-  const best = store.get("best", {}); const saved = savedList().length;
+  const best = store.get("best", {});
   const row = (h, e, t, d) => `<a class="row" href="${h}"><span class="emoji">${e}</span><span class="grow"><span class="t">${t}</span><div class="d">${d}</div></span><span class="chev">›</span></a>`;
   view.innerHTML = `
     <h3 style="margin-top:4px">Lo principal</h3>
     <div class="list">
-      ${row("#/sesion", "⚡", "Sesión del día", `${sessionSize()} ejercicios mezclados según tu nivel y tus errores`)}
+      ${row("#/sesion", "⚡", "Sesión del día", `${sessionSize()} ejercicios de tu tema y tus errores`)}
       ${row("#/rapida", "⏳", "Sesión rápida", "6 ejercicios · cuenta para tu reto en días pesados")}
-      ${row("#/historias", "📖", "Historias", "Input comprensible: escucha, lee y responde")}
-      ${row("#/errores", "🎯", "Mis errores", errors ? `${errors} oraciones por dominar` : "Aún no tienes errores guardados")}
-      ${row("#/guardadas", "⭐", "Mis frases guardadas", saved ? `${saved} frases · repásalas como tarjetas` : "Guarda frases con ⭐ en ejercicios e historias")}
+      ${row("#/historias", "📖", "Lecturas", `${STORIES.length} historias · toca cualquier palabra para ver qué significa`)}
     </div>
     <h3>🤫 En la calle (sin audio ni hablar)</h3>
     <div class="list">
-      ${row("#/silenciosa", "🤫", "Sesión silenciosa", "La sesión del día solo con lectura y escritura · cuenta para tu reto")}
-      ${row("#/parejas", "🧩", "Parejas", "Une palabras con su traducción · rápido y adictivo")}
-      ${row("#/palabras", "🔤", "¿Qué significa?", `${VOCAB_LIST.length} palabras por temas: tecnología, calle, juegos...`)}
-      ${row("#/corrige", "🕵️", "Corrige el error", `${FIX.length} errores típicos de hispanohablantes`)}
-      ${row("#/historias", "📖", "Leer una historia", "Lee sin audio y responde")}
+      ${row("#/silenciosa", "🤫", "Sesión silenciosa", "Tu sesión solo con lectura y escritura")}
+      ${row("#/corrige", "🕵️", "Corrige el error", `${FIX2.length} errores típicos, cada uno explicado`)}
+      ${row("#/parejas", "🧩", "Parejas", "Une palabras con su traducción")}
+      ${row("#/palabras", "🔤", "¿Qué significa?", `${VOCAB_LIST.length} palabras por temas`)}
+      ${row("#/quiz", "✅", "Quiz de gramática", "Opción múltiple con explicación")}
+      ${row("#/contrarreloj", "⏱️", "Contrarreloj de verbos", `Récord: ${best.rush || 0} en 60 s`)}
     </div>
-    <h3>Entrenamientos</h3>
+    <h3>🎧 Con audio</h3>
     <div class="list">
       ${row("#/sonidos", "👂", "Sonidos difíciles", "Pares mínimos para entrenar el oído")}
+      ${row("#/dictado", "🎧", "Dictado libre", "Oraciones de A1 a B2")}
       ${row("#/repite", "🗣️", "Escucha y repite", "Shadowing con micrófono")}
       ${row("#/hablar", "🎤", "Habla 1 minuto", "Situaciones reales con frases de apoyo")}
-      ${row("#/tarjetas", "🃏", "Tarjetas", "Verbos, frases, TI, phrasal verbs, falsos amigos")}
-      ${row("#/contrarreloj", "⏱️", "Contrarreloj de verbos", `Récord: ${best.rush || 0} en 60 s`)}
-      ${row("#/dictado", "🎧", "Dictado libre", "Oraciones de A1 a B2")}
-      ${row("#/quiz", "✅", "Quiz de gramática", "Opción múltiple con explicación")}
     </div>`;
 };
 
@@ -747,13 +764,15 @@ routes.historia = (id) => {
   const st = STORIES.find((x) => x.id === id) || STORIES[0];
   setTitle(st.title, true);
   view.innerHTML = `<div class="btns" style="margin-top:0"><button class="btn" id="all">🔊 Escuchar toda</button><button class="btn secondary" id="stop">■ Parar</button></div>
-    <p class="sub" style="margin-top:12px">Toca una línea para oírla · <b>ES</b> para ver la traducción · ⭐ para guardarla.</p>
-    <div class="card story">${st.lines.map(([en, es], i) => `<div class="line"><span class="en" data-i="${i}">${esc(en)}</span>
-      <button class="mini es-t" data-i="${i}">ES</button><button class="mini star ${isSaved(en) ? "on" : ""}" data-i="${i}" aria-label="Guardar">⭐</button><div class="es" id="es${i}" hidden>${esc(es)}</div></div>`).join("")}</div>
+    <p class="sub" style="margin-top:12px">Toca una <b>palabra</b> para ver qué significa · 🔊 para oír la línea · <b>ES</b> para la traducción · ⭐ para guardarla.</p>
+    <div class="card story">${st.lines.map(([en, es], i) => `<div class="line"><span class="en" data-i="${i}">${esc(en).split(" ").map((w) => `<span class="w">${w}</span>`).join(" ")}</span>
+      <button class="mini say-l" data-i="${i}" aria-label="Escuchar">🔊</button><button class="mini es-t" data-i="${i}">ES</button><button class="mini star ${isSaved(en) ? "on" : ""}" data-i="${i}" aria-label="Guardar">⭐</button><div class="es" id="es${i}" hidden>${esc(es)}</div></div>`).join("")}</div>
     <h3>Preguntas</h3><div id="qs"></div>`;
   $("#all").onclick = () => speakAll(st.lines.map((l) => l[0]));
   $("#stop").onclick = () => speechSynthesis.cancel();
-  view.querySelectorAll(".en").forEach((el) => (el.onclick = () => { view.querySelectorAll(".en").forEach((x) => x.classList.remove("playing")); el.classList.add("playing"); speak(st.lines[Number(el.dataset.i)][0]); }));
+  view.querySelectorAll(".say-l").forEach((el) => (el.onclick = () => { view.querySelectorAll(".en").forEach((x) => x.classList.remove("playing")); el.parentElement.querySelector(".en").classList.add("playing"); speak(st.lines[Number(el.dataset.i)][0]); }));
+  view.querySelectorAll(".story .w").forEach((el) => (el.onclick = () => { view.querySelectorAll(".w.on").forEach((x) => x.classList.remove("on")); el.classList.add("on"); showWord(el.textContent); }));
+  cleanup = () => document.querySelectorAll(".wpop").forEach((x) => x.remove());
   view.querySelectorAll(".star").forEach((b) => (b.onclick = () => { const [en, es] = st.lines[Number(b.dataset.i)]; b.classList.toggle("on", toggleSaved(en, es, st.title)); }));
   view.querySelectorAll(".es-t").forEach((b) => (b.onclick = () => { const e = $("#es" + b.dataset.i); e.hidden = !e.hidden; }));
   let answered = 0, right = 0;
@@ -764,12 +783,13 @@ routes.historia = (id) => {
     box.dataset.done = 1; const k = Number(box.dataset.k), ans = st.q[k][2];
     box.querySelectorAll(".opt").forEach((o) => Number(o.dataset.j) === ans && o.classList.add("right"));
     if (Number(b.dataset.j) !== ans) { b.classList.add("wrong"); beep(false); } else { right++; beep(true); }
+    if (st.q[k][3]) { const ex = document.createElement("div"); ex.className = "feedback " + (Number(b.dataset.j) === ans ? "ok" : "no"); ex.innerHTML = md(st.q[k][3]); box.appendChild(ex); }
     answered++;
     if (answered === st.q.length) {
       const r = store.get("stories", {}); r[st.id] = Math.max(r[st.id] || 0, right); store.set("stories", r);
       bump("story"); bump("xp", XP.story + right * 5);
       const d = document.createElement("div");
-      d.innerHTML = `<div class="feedback ${right === 3 ? "ok" : "no"}"><b>${right}/3.</b> ${right === 3 ? "¡Entendiste todo!" : "Vuelve a escucharla mañana: la segunda vez se entiende mucho más."}</div><a class="btn" href="#/">Volver al inicio</a>`;
+      d.innerHTML = `<div class="feedback ${right === st.q.length ? "ok" : "no"}"><b>${right}/${st.q.length}.</b> ${right === st.q.length ? "¡Entendiste todo!" : "Vuelve a escucharla mañana: la segunda vez se entiende mucho más."}</div><a class="btn" href="#/">Volver al inicio</a>`;
       $("#qs").appendChild(d);
     }
   };
@@ -1053,7 +1073,7 @@ Oraciones que más fallo:
 ${worst || "- (ninguna todavía)"}`;
 }
 /* ---------- Exportar / importar progreso (JSON) ---------- */
-const DATA_KEYS = ["days", "sent", "srs", "best", "stories", "profile", "rate", "newCount", "saved", "disputes", "flags", "notes", "lastExport"];
+const DATA_KEYS = ["days", "sent", "srs", "best", "stories", "profile", "rate", "newCount", "saved", "disputes", "flags", "notes", "lastExport", "errlog", "read"];
 const EXPORT_EVERY = 7;
 const daysBetween = (a, b) => { const p = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }; return Math.round((p(b) - p(a)) / 86400000); };
 function buildExport() {
@@ -1068,6 +1088,9 @@ function buildExport() {
       respuestasQueDiceQueSonCorrectas: store.get("disputes", []).slice(-30),
       reportesDeProblemas: store.get("flags", []).slice(-30),
       frasesGuardadas: savedList().map((x) => x.en),
+      temasQueMasFalla: topicErrorCounts(30).map(([k, n]) => `${(topicOf(k) || { title: k }).title}: ${n}`),
+      erroresRecientes: errLog().slice(-25).map((e) => `${e.exp} ← ${e.typed || "(no supo)"}`),
+      fichasLeidas: Object.keys(store.get("read", {})),
     },
     summary: {
       nombre: p.name, metas: p.goals, intereses: p.interests, minutosAlDia: p.minutes, xpTotal: totalXP(),
@@ -1207,9 +1230,258 @@ routes.progreso = () => {
   };
 };
 
+/* ---------- v10: diagnóstico de errores ---------- */
+const LEVEL_COLOR = { A1: "a1", A2: "a2", B1: "b1", B2: "b2" };
+const topicOf = (key) => (typeof TOPIC_BY_KEY !== "undefined" ? TOPIC_BY_KEY[key] : null);
+const PREPS = ["in", "on", "at", "of", "to", "for", "from", "with", "about", "by", "near", "under", "into"];
+const PREP_TIPS = { depend: "*depend **on***", wait: "*wait **for***", married: "*married **to***", listen: "*listen **to***", look: "*look **at** / look **for***", interested: "*interested **in***", good: "*good **at***", arrive: "*arrive **at/in***", bus: "transporte público con **on**: *on the bus, on the train*; carro y taxi con **in**", train: "*on the train*", home: "*at home* (estar) y *go home* (ir)", table: "superficies con **on**: *on the table*", monday: "días con **on**", night: "*at night*, *in the morning*" };
+function lev(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+const verbOfPast = (w) => VERBS.find((v) => v.past.split("/").includes(w) || v.pp.split("/").includes(w));
+function pairRule(e, t, E) {
+  const be = ["am", "is", "are"];
+  if (be.includes(e) && be.includes(t) && E.includes("there")) return `Con **there** cuenta lo que sigue: singular → **there is**, plural → **there are**. Aquí va **${e}**.`;
+  if (be.includes(e) && be.includes(t)) return `Con **I** va *am*, con **he/she/it** va *is* y con **you/we/they** va *are*. Aquí va **${e}**.`;
+  if (["was", "were"].includes(e) && ["was", "were"].includes(t)) return `**was** con I/he/she/it y **were** con you/we/they. Aquí va **${e}**.`;
+  if (["do", "does"].includes(e) && ["do", "does"].includes(t)) return `**does / doesn't** con he/she/it y **do / don't** con I/you/we/they. Aquí va **${e}**.`;
+  if (["a", "an"].includes(e) && ["a", "an"].includes(t)) return `*a* o *an* depende del **sonido** de la palabra que sigue: **an** antes de vocal (*an app, an hour*), **a** antes de consonante (*a game, a user*).`;
+  if (["this", "these", "that", "those"].includes(e) && ["this", "these", "that", "those"].includes(t)) return `**this/that** son singulares; **these/those** son plurales. Aquí va **${e}**.`;
+  if (["much", "many"].includes(e) && ["much", "many"].includes(t)) return `**many** con cosas que se cuentan (players, friends); **much** con incontables (time, money). Aquí va **${e}**.`;
+  if (["his", "her", "their", "its", "my", "your", "our"].includes(e) && ["his", "her", "their", "its", "my", "your", "our"].includes(t)) return `El posesivo depende del **dueño**: *his* (de él), *her* (de ella), *their* (de ellos), *its* (de una cosa). Aquí va **${e}**.`;
+  if (PREPS.includes(e) && PREPS.includes(t)) {
+    const tip = Object.keys(PREP_TIPS).find((k) => E.some((w) => w.startsWith(k)));
+    return `Preposición: aquí va **${e}**, no *${t}*.` + (tip ? ` Recuerda: ${PREP_TIPS[tip]}.` : " Las preposiciones casi nunca se traducen palabra por palabra: apréndelas con su frase completa.");
+  }
+  if (e === t + "s" || e === t + "es" || (e.endsWith("ies") && t === e.slice(0, -3) + "y")) return `Falta la **-s**: **${e}**. Con **he/she/it** el verbo en presente lleva -s (*she work**s***), y los sustantivos en plural también.`;
+  if (t === e + "s" || t === e + "es" || (t.endsWith("ies") && e === t.slice(0, -3) + "y")) return `Sobra la **-s**: va **${e}**. Después de *do/does/did/can/will* o con *I/you/we/they* el verbo va sin -s; los adjetivos nunca llevan -s.`;
+  if (e.endsWith("ing") && (e.startsWith(t) || e.slice(0, -3) === t)) return `Falta el **-ing**: **${e}**. En presente continuo van juntos *am/is/are* + verbo**-ing**.`;
+  const vE = verbOfPast(e), vT = verbOfPast(t);
+  if (vT && vT.base === e) return `Después de **did / didn't / can / will / to** el verbo va en su **forma base**: **${e}**, no *${t}*. El pasado ya lo marca *did*.`;
+  if (vE && vE.base === t) return `Aquí se necesita el **pasado**: **${e}** (de *${t}*). Es un verbo irregular, así que no termina en -ed.`;
+  if (vE && t === vE.base + "ed") return `*${t}* no existe: **${vE.base}** es irregular → **${e}**. Repásalo en el contrarreloj de verbos.`;
+  if (e.length > 3 && lev(e, t) <= 2) return `Revisa la ortografía: se escribe **${e}**.`;
+  return null;
+}
+function diagnose(expected, typed) {
+  const out = [];
+  if (!typed || !typed.trim()) return out;
+  const E = norm(expected), T = norm(typed);
+  if (E.join(" ") === T.join(" ")) return out;
+  let missing = E.filter((w, i) => E.slice(0, i).filter((x) => x === w).length >= T.filter((x) => x === w).length);
+  let extra = T.filter((w, i) => T.slice(0, i).filter((x) => x === w).length >= E.filter((x) => x === w).length);
+  if (!missing.length && !extra.length) {
+    out.push("Usaste las palabras correctas, pero el **orden** cambió. En inglés el orden es **sujeto + verbo + complemento**; en preguntas el auxiliar (*do, is, can*) va antes del sujeto.");
+    return out;
+  }
+  if (extra.includes("have") && missing.some((w) => ["am", "is", "are"].includes(w))) { out.push("La **edad**, el hambre y el frío van con **to be**, no con *have*: *I'm 20*, *I'm hungry*."); extra = extra.filter((w) => w !== "have"); missing = missing.filter((w) => !["am", "is", "are"].includes(w)); }
+  extra.slice().forEach((t) => {
+    const e = missing.find((m) => pairRule(m, t, E));
+    if (e) { out.push(pairRule(e, t, E)); missing = missing.filter((x) => x !== e); extra = extra.filter((x) => x !== t); }
+  });
+  if (extra.includes("to") && E.some((w) => ["can", "could", "will", "should", "must", "let's", "let"].includes(w))) { out.push("Después de **can, will, should, must** o **let's** el verbo va directo, **sin to**."); extra = extra.filter((x) => x !== "to"); }
+  if (extra.includes("the") && !missing.length) { out.push("Sobra **the**: para hablar en general, o con *home, work, school, Monday*, en inglés no va artículo."); extra = extra.filter((x) => x !== "the"); }
+  if (missing[0] === "it" && E[0] === "it") { out.push("Falta el **sujeto**. En inglés siempre se dice: para clima, hora o cosas usa **it** (*It's cold, It's easy*)."); missing = missing.slice(1); }
+  if (missing.some((w) => ["am", "is", "are"].includes(w)) && T.some((w) => w.endsWith("ing"))) { out.push("Falta **am/is/are** antes del verbo con -ing: *I **am** studying*."); missing = missing.filter((w) => !["am", "is", "are"].includes(w)); }
+  if (missing.some((w) => ["do", "does", "did"].includes(w))) { out.push("Falta el auxiliar **do / does / did**: lo necesitan las preguntas y negativas con verbos normales (*Do you play? She doesn't work*)."); missing = missing.filter((w) => !["do", "does", "did"].includes(w)); }
+  if (missing.some((w) => ["a", "an", "the"].includes(w))) { out.push(`Falta el artículo **${missing.find((w) => ["a", "an", "the"].includes(w))}**. Con profesiones y cosas en singular el inglés casi siempre lo pide (*I'm **a** student*).`); missing = missing.filter((w) => !["a", "an", "the"].includes(w)); }
+  if (missing.includes("not")) { out.push("Falta **not**: la negación se forma con el auxiliar (*don't, isn't, can't*)."); missing = missing.filter((w) => w !== "not"); }
+  if (missing.length) out.push(`Te faltó: **${missing.join(", ")}**.`);
+  if (extra.length) out.push(`Te sobró: *${extra.join(", ")}*.`);
+  return out.slice(0, 3);
+}
+
+/* ---------- Cuaderno de errores ---------- */
+function logError(it, typed) {
+  const s = it.kind === "sentence" ? it.s : null;
+  const entry = s ? { id: s.id, t: s.topic, exp: s.en, typed: typed || "", k: it.type }
+    : it.kind === "fix" ? { id: "fix:" + it.fix.w, t: it.fix.t, exp: it.fix.r, typed: typed || "", k: "fix" } : null;
+  if (!entry) return;
+  logTo("errlog", entry);
+}
+const errLog = () => store.get("errlog", []);
+function topicErrorCounts(days = 30) {
+  const since = addDays(today(), -days); const c = {};
+  errLog().filter((e) => e.date >= since && e.t).forEach((e) => { c[e.t] = (c[e.t] || 0) + 1; });
+  return Object.entries(c).sort((a, b) => b[1] - a[1]);
+}
+
+/* ---------- Fichas ---------- */
+function renderFicha(u, compact) {
+  const f = u.ficha;
+  if (!f) return `<div class="ficha"><div class="f-sec"><h4>Lo esencial</h4><ul>${(u.idea || []).map((l) => `<li>${md(l)}</li>`).join("")}</ul>
+    <p class="muted small">La ficha completa de este tema llega en la siguiente actualización.</p></div></div>`;
+  const tbl = (t) => `<div class="tbl"><table>${t.h ? `<tr>${t.h.map((x) => `<th>${md(x)}</th>`).join("")}</tr>` : ""}${t.r.map((r) => `<tr>${r.map((c) => `<td>${md(c)}</td>`).join("")}</tr>`).join("")}</table></div>`;
+  return `<div class="ficha">
+    <div class="f-sec f-que"><h4>🧭 Qué es</h4><p>${md(f.que)}</p></div>
+    ${f.usos ? `<div class="f-sec"><h4>🎯 Cuándo se usa</h4><ul>${f.usos.map((x) => `<li>${md(x)}</li>`).join("")}</ul></div>` : ""}
+    ${f.forma ? `<div class="f-sec"><h4>🧱 Cómo se forma</h4>${f.forma.map((t) => `<div class="f-tt">${md(t.t)}</div>${tbl(t)}`).join("")}</div>` : ""}
+    ${f.variantes ? `<div class="f-sec"><h4>🔀 Variantes y casos especiales</h4><ul>${f.variantes.map((x) => `<li>${md(x)}</li>`).join("")}</ul></div>` : ""}
+    ${f.espanol ? `<div class="f-sec f-es"><h4>🇲🇽 Comparado con el español</h4><ul>${f.espanol.map((x) => `<li>${md(x)}</li>`).join("")}</ul></div>` : ""}
+    ${f.ejemplos ? `<div class="f-sec"><h4>💬 Ejemplos <span class="muted small">(toca para escuchar)</span></h4><div class="f-ex">${f.ejemplos.map(([en, es]) => `<button class="f-say" data-t="${esc(en)}"><b>${esc(en)}</b><span>${esc(es)}</span></button>`).join("")}</div></div>` : ""}
+    ${f.errores ? `<div class="f-sec"><h4>⚠️ Errores típicos</h4>${f.errores.map(([w, r, why]) => `<div class="f-err"><div><s>${esc(w)}</s> → <b>${esc(r)}</b></div><div class="muted small">${md(why)}</div></div>`).join("")}</div>` : ""}
+    ${f.truco ? `<div class="f-sec f-truco"><h4>💡 Truco para recordarlo</h4><p>${md(f.truco)}</p></div>` : ""}
+  </div>`;
+}
+function bindFicha(root) { root.querySelectorAll(".f-say").forEach((b) => (b.onclick = () => speak(b.dataset.t))); }
+function openFicha(key) {
+  const u = topicOf(key); if (!u) return;
+  const m = document.createElement("div"); m.className = "sheet-bg";
+  m.innerHTML = `<div class="sheet tall"><div class="sheet-head"><span class="lvl ${LEVEL_COLOR[u.level]}">${u.level}</span><h2>${esc(u.title)}</h2><button class="x" aria-label="Cerrar">✕</button></div>
+    <div class="sheet-body">${renderFicha(u)}<a class="btn secondary" href="#/tema/${u.id}/leer">Abrir el tema completo</a></div></div>`;
+  document.body.appendChild(m); bindFicha(m);
+  m.onclick = (e) => { if (e.target === m || e.target.closest(".x")) m.remove(); };
+}
+
+/* ---------- Diccionario al tocar palabras ---------- */
+function lookup(raw) {
+  const w = raw.toLowerCase().replace(/[^a-z']/g, "").replace(/'s$/, "").replace(/^'|'$/g, "");
+  if (!w) return null;
+  const v = verbOfPast(w);
+  const cands = [w, v && v.base, w.replace(/ies$/, "y"), w.replace(/es$/, ""), w.replace(/s$/, ""), w.replace(/ed$/, ""), w.replace(/d$/, ""), w.replace(/ing$/, ""), w.replace(/ing$/, "e"), w.replace(/(.)\1ing$/, "$1"), w.replace(/(.)\1ed$/, "$1"), w.replace(/n't$/, "")].filter(Boolean);
+  for (const c of cands) {
+    if (DICT[c]) return { w: raw, base: c, es: DICT[c] };
+    const vl = VOCAB_LIST.find((x) => x.en === c || x.en === "to " + c);
+    if (vl) return { w: raw, base: c, es: vl.es };
+    const vb = VERBS.find((x) => x.base === c);
+    if (vb) return { w: raw, base: c, es: vb.es };
+  }
+  return null;
+}
+function showWord(raw) {
+  document.querySelectorAll(".wpop").forEach((x) => x.remove());
+  const r = lookup(raw);
+  const p = document.createElement("div"); p.className = "wpop";
+  p.innerHTML = r ? `<b>${esc(r.w.replace(/[.,!?"]/g, ""))}</b>${r.base !== r.w.toLowerCase().replace(/[^a-z']/g, "") ? ` <span class="muted small">(de ${esc(r.base)})</span>` : ""}<div>${esc(r.es)}</div><button class="speak inline" data-t="${esc(r.base)}">🔊</button>`
+    : `<b>${esc(raw)}</b><div class="muted">Aún no está en el diccionario.</div>`;
+  document.body.appendChild(p);
+  const sp = p.querySelector(".speak"); if (sp) sp.onclick = () => speak(sp.dataset.t);
+  setTimeout(() => p.remove(), 5000);
+}
+
+/* ---------- v10: Aprender (mapa por niveles) ---------- */
+const LEVEL_INFO = { A1: "Principiante", A2: "Básico", B1: "Intermedio", B2: "Intermedio alto" };
+const readMap = () => store.get("read", {});
+routes.ruta = () => go("#/aprender");
+routes.unidad = (id) => go("#/tema/" + id);
+routes.aprender = () => {
+  setTitle("Aprender", false);
+  const cu = curUnit(), rd = readMap();
+  const levels = ["A1", "A2", "B1", "B2"];
+  view.innerHTML = `<p class="sub">Cada tema tiene 3 pasos: <b>leer</b> la ficha, <b>practicar</b> y llegar a <b>dominado</b> (80%).</p>
+    ${levels.map((lv) => {
+      const us = UNITS.filter((u) => u.level === lv);
+      const done = us.filter((u) => unitMastery(u.id) >= 80).length;
+      return `<section class="lvl-sec ${LEVEL_COLOR[lv]}">
+        <div class="lvl-head"><span class="lvl ${LEVEL_COLOR[lv]}">${lv}</span><div class="grow"><b>${LEVEL_INFO[lv]}</b><div class="muted small">${us.length ? `${done} de ${us.length} temas dominados` : "Próximamente"}</div></div></div>
+        ${us.length ? `<div class="list">${us.map((u) => {
+          const m = unitMastery(u.id), read = !!rd[u.key];
+          return `<a class="row topic ${u.id === cu ? "current" : ""}" href="#/tema/${u.id}">
+            <span class="unum ${m >= 80 ? "done" : ""}">${m >= 80 ? "✓" : u.id}</span>
+            <span class="grow"><span class="t">${esc(u.title)}</span><div class="d">${esc(u.sub || "")}${u.id === cu ? ` · <b class="acc">estás aquí</b>` : ""}</div>
+              <div class="steps"><span class="${read ? "on" : ""}">📖 Leer</span><span class="${m > 0 ? "on" : ""}">✍️ ${m}%</span><span class="${m >= 80 ? "on" : ""}">🏆</span></div></span>
+            <span class="chev">›</span></a>`;
+        }).join("")}</div>` : `<p class="muted small" style="margin:6px 4px 0">Llegan en la fase 4: pasado perfecto, tercer condicional, reported speech, causativo y más.</p>`}
+      </section>`;
+    }).join("")}
+    <h3>Biblioteca</h3>
+    <div class="list">
+      <a class="row" href="#/guias"><span class="emoji">📚</span><span class="grow"><span class="t">Guía completa (7 partes)</span><div class="d">Todo el temario en un solo lugar</div></span><span class="chev">›</span></a>
+      <a class="row" href="#/consulta"><span class="emoji">🔁</span><span class="grow"><span class="t">Verbos irregulares y tiempos</span><div class="d">Tabla con buscador y audio</div></span><span class="chev">›</span></a>
+      <a class="row" href="#/palabras"><span class="emoji">🔤</span><span class="grow"><span class="t">Vocabulario por temas</span><div class="d">${VOCAB_LIST.length} palabras</div></span><span class="chev">›</span></a>
+      <a class="row" href="#/historias"><span class="emoji">📖</span><span class="grow"><span class="t">Lecturas</span><div class="d">${STORIES.length} historias con diccionario al tocar</div></span><span class="chev">›</span></a>
+    </div>`;
+};
+
+/* ---------- v10: página de tema ---------- */
+routes.tema = (id, tab = "leer") => {
+  const u = UNITS.find((x) => x.id === Number(id)) || UNITS[0];
+  setTitle(u.title, true);
+  const m = unitMastery(u.id), rd = readMap();
+  const errs = errLog().filter((e) => e.t === u.key);
+  const tabs = [["leer", "📖 Leer"], ["practicar", "✍️ Practicar"], ["errores", `🎯 Mis errores${errs.length ? ` (${errs.length})` : ""}`]];
+  view.innerHTML = `<div class="tema-head ${LEVEL_COLOR[u.level]}"><span class="lvl ${LEVEL_COLOR[u.level]}">${u.level} · Tema ${u.id}</span>
+      <h2>${esc(u.title)}</h2><div class="muted small">${esc(u.sub || "")}</div>
+      <div class="progress ${m >= 80 ? "good" : ""}" style="margin-top:10px"><span style="width:${m}%"></span></div>
+      <div class="muted small" style="margin-top:6px">${m}% dominado${rd[u.key] ? " · ficha leída ✓" : ""}${u.id === curUnit() ? " · tu tema actual" : ""}</div></div>
+    <div class="seg">${tabs.map(([k, l]) => `<a href="#/tema/${u.id}/${k}" class="${k === tab ? "on" : ""}">${l}</a>`).join("")}</div>
+    <div id="tb"></div>`;
+  const tb = $("#tb");
+  const sents = SENTENCES.filter((s) => s.unit === u.id);
+  if (tab === "leer") {
+    tb.innerHTML = renderFicha(u) + `<div class="btns"><button class="btn" id="go">✓ Ya lo leí · practicar</button></div>`;
+    bindFicha(tb);
+    $("#go").onclick = () => { const r = readMap(); r[u.key] = today(); store.set("read", r); runSession(buildUnitSession(u.id), u.title, false); };
+  } else if (tab === "practicar") {
+    tb.innerHTML = `<button class="btn" id="practice">Practicar este tema (12 ejercicios)</button>
+      ${u.id !== curUnit() ? `<button class="btn ghost" id="setcur">Hacer este mi tema actual</button>` : ""}
+      <h3>${sents.length} oraciones <span class="muted small">(toca para escuchar)</span></h3>
+      <div class="list">${sents.map((s) => { const st = stateOf(s.id); return `<button class="row say" data-t="${esc(s.en)}"><span class="emoji">${st && st.lvl >= 2 ? "✅" : st ? "🟡" : "⚪"}</span><span class="grow"><span class="t">${esc(s.en)}</span><div class="d">${esc(s.es)}</div></span></button>`; }).join("")}</div>
+      <p class="muted small">⚪ nueva · 🟡 aprendiendo · ✅ dominada</p>`;
+    tb.querySelectorAll(".say").forEach((b) => (b.onclick = () => speak(b.dataset.t)));
+    $("#practice").onclick = () => runSession(buildUnitSession(u.id), u.title, false);
+    const sc = $("#setcur"); if (sc) sc.onclick = () => { setProfile({ unit: u.id }); toast("Listo, es tu tema actual"); render(); };
+  } else {
+    tb.innerHTML = errs.length ? `<button class="btn" id="rv">Repasar mis errores de este tema</button>
+      <h3>Tus errores (${errs.length})</h3><div class="list">${errs.slice().reverse().slice(0, 30).map(errRow).join("")}</div>`
+      : `<div class="card center"><div class="big">🎯</div><h2>Sin errores en este tema</h2><p class="sub">Cuando falles algo aquí, aparecerá con su explicación.</p></div>`;
+    const rv = $("#rv"); if (rv) rv.onclick = () => runSession(buildTopicReview(u.key), "Repaso: " + u.title, false);
+  }
+};
+function errRow(e) {
+  if (e.k === "fix") {
+    const f = FIX2.find((x) => "fix:" + x.w === e.id);
+    if (f) return `<div class="row err-row"><span class="grow"><div><s>${esc(f.w)}</s> → <b>${esc(f.r)}</b></div><div class="d">${md(f.why.split(". ")[0] + ".")}</div><div class="d">${e.date} · Corrige el error</div></span></div>`;
+  }
+  const d = e.typed ? diagnose(e.exp, e.typed) : [];
+  return `<div class="row err-row"><span class="grow"><div><b>${esc(e.exp)}</b></div>${e.typed ? `<div class="small">Escribiste: <s>${esc(e.typed)}</s></div>` : ""}
+    ${d.length ? `<div class="d">${md(d[0])}</div>` : ""}<div class="d">${e.date}${topicOf(e.t) ? ` · ${esc(topicOf(e.t).title)}` : ""}</div></span></div>`;
+}
+function buildTopicReview(key) {
+  const st = sstate(); const u = topicOf(key); if (!u) return [];
+  const wrongIds = new Set(errLog().filter((e) => e.t === key).map((e) => e.id));
+  const pool = SENTENCES.filter((s) => s.unit === u.id);
+  const first = pool.filter((s) => wrongIds.has(s.id) || (st[s.id] && st[s.id].wrong > 0));
+  const rest = shuffle(pool.filter((s) => !first.includes(s)));
+  const fixes = FIX2.filter((f) => f.t === key).slice(0, 2).map(fixItem);
+  return [...shuffle(first), ...rest].slice(0, 10).map((s) => ({ kind: "sentence", s, type: typeFor(Math.min(2, (st[s.id] || { lvl: 0 }).lvl)) })).concat(fixes);
+}
+routes.repasar = (key) => { const u = topicOf(key); runSession(buildTopicReview(key), u ? "Repaso: " + u.title : "Repaso", false); };
+
+/* ---------- v10: Repaso ---------- */
+routes.repaso = () => {
+  setTitle("Repaso", false);
+  const counts = topicErrorCounts(30).slice(0, 5);
+  const recent = errLog().slice().reverse().slice(0, 12);
+  const errors = Object.values(sstate()).filter((s) => s.wrong > 0 && s.lvl < 3).length;
+  const saved = savedList().length;
+  view.innerHTML = `
+    <h3 style="margin-top:4px">Los temas que más fallas (30 días)</h3>
+    ${counts.length ? `<div class="list">${counts.map(([k, n]) => { const u = topicOf(k); return `<div class="row"><span class="emoji">🎯</span><span class="grow"><span class="t">${esc(u ? u.title : k)}</span><div class="d">${n} ${n === 1 ? "error" : "errores"}${u ? ` · ${u.level}` : ""}</div></span>
+      ${u ? `<a class="mini-btn" href="#/tema/${u.id}/leer">Leer</a><a class="mini-btn on" href="#/repasar/${k}">Repasar</a>` : ""}</div>`; }).join("")}</div>`
+      : `<div class="card"><p class="sub" style="margin:0">Todavía no hay errores guardados. Cada vez que falles algo, aparecerá aquí agrupado por tema, con su explicación.</p></div>`}
+    <h3>Herramientas de repaso</h3>
+    <div class="list">
+      <a class="row" href="#/errores"><span class="emoji">🔁</span><span class="grow"><span class="t">Sesión de mis errores</span><div class="d">${errors ? `${errors} oraciones por dominar` : "Aún no hay"}</div></span><span class="chev">›</span></a>
+      <a class="row" href="#/guardadas"><span class="emoji">⭐</span><span class="grow"><span class="t">Mis frases guardadas</span><div class="d">${saved ? `${saved} frases` : "Guarda frases con ⭐"}</div></span><span class="chev">›</span></a>
+      <a class="row" href="#/tarjetas"><span class="emoji">🃏</span><span class="grow"><span class="t">Tarjetas</span><div class="d">Verbos, frases, TI, phrasal verbs y falsos amigos</div></span><span class="chev">›</span></a>
+      <a class="row" href="#/corrige"><span class="emoji">🕵️</span><span class="grow"><span class="t">Corrige el error</span><div class="d">${FIX2.length} errores típicos, cada uno explicado</div></span><span class="chev">›</span></a>
+    </div>
+    ${recent.length ? `<h3>Errores recientes</h3><div class="list">${recent.map(errRow).join("")}</div>` : ""}`;
+};
+
+/* ---------- Migración de progreso (ruta v10) ---------- */
+(() => {
+  const raw = store.get("profile", {});
+  if (!raw.pathV) { const nu = raw.unit ? (LEGACY_TO_UNIT[raw.unit] || 1) : 1; store.set("profile", Object.assign(raw, { unit: nu, pathV: 2 })); }
+})();
+
 /* ---------- Arranque ---------- */
 applyPrefs();
-const APP_VERSION = "9";
+const APP_VERSION = "10";
 if ("serviceWorker" in navigator) {
   const hadController = !!navigator.serviceWorker.controller;
   let reloaded = false;

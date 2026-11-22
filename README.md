@@ -22,6 +22,13 @@ App web personalizada para practicar inglés en el iPhone. Funciona sin internet
 - **🤫 Modo silencioso (para la calle):** sesiones solo de lectura y escritura, sin audio automático ni hablar. Incluye Parejas, ¿Qué significa? (125 palabras por temas) y Corrige el error (46 errores típicos).
 - **Contenido:** 213 oraciones personalizadas en 12 unidades y 12 historias de A1 a B1.
 
+### v10 (fase 1 del rediseño)
+- Pestañas: **Hoy · Aprender · Practicar · Repaso · Yo**.
+- **Aprender:** mapa por niveles con 12 temas A1 completos; cada tema tiene ficha (qué es, cuándo se usa, cómo se forma, variantes, comparación con el español, ejemplos, errores típicos y truco), práctica y tus errores.
+- **Errores que enseñan:** al fallar ves tu respuesta, el diagnóstico de *por qué* está mal, la ficha completa y "Practicar esto ahora".
+- **Repaso:** cuaderno de errores agrupado por tema. 65 errores típicos explicados.
+- **Lecturas:** 18 historias; toca cualquier palabra para ver su significado.
+
 ## Instalar en el iPhone
 1. Abre el enlace en **Safari**.
 2. **Compartir → Agregar a pantalla de inicio → Agregar**.

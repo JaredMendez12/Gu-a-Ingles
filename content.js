@@ -2,7 +2,7 @@
 // En cada oración, [corchetes] marcan la parte que se practica.
 // Formato de oraciones: "inglés | español | otras respuestas válidas separadas por ;"
 
-const UNITS = [
+const LEGACY_UNITS = [
   { id: 1, level: "A1", title: "Soy, estoy, tengo: TO BE",
     idea: ["*To be* = ser y estar. También se usa para edad, hambre, frío y razón.", "I **am** · you/we/they **are** · he/she/it **is**", "Negativo: **is not / isn't**. Pregunta: **Are** you...?"],
     s: `I [am] an IT student. | Soy estudiante de TI. | I'm an IT student
@@ -227,16 +227,31 @@ const STORIES = [
 ];
 
 // Construye la lista de oraciones con su id, unidad, respuesta objetivo y alternativas.
-const SENTENCES = UNITS.flatMap((u) => (u.s.trim() + (typeof EXTRA_S !== "undefined" && EXTRA_S[u.id] ? "\n" + EXTRA_S[u.id].trim() : "")).split("\n").map((line, i) => {
+// ---------- Ruta de temas (v10) ----------
+// A1: temas de a1.js (algunos reutilizan las oraciones de las unidades anteriores para conservar el progreso).
+// A2/B1: unidades anteriores, hasta que tengan su ficha completa.
+const LEGACY_KEYS = { 7: "a2-past", 8: "a2-irr", 9: "a2-fut", 10: "a2-comp", 11: "a2-quant", 12: "b1-pp" };
+const parseLine = (line) => {
   const [enRaw, es, alts = ""] = line.split("|").map((x) => x.trim());
   const m = enRaw.match(/\[(.+?)\]/);
-  return {
-    id: `u${u.id}-${i}`, unit: u.id, es,
-    en: enRaw.replace(/[\[\]]/g, ""),
-    target: m ? m[1] : "",
-    cloze: enRaw.replace(/\[.+?\]/, "____"),
-    alts: alts ? alts.split(";").map((a) => a.trim()) : [],
-  };
+  return { es, en: enRaw.replace(/[\[\]]/g, ""), target: m ? m[1] : "", cloze: enRaw.replace(/\[.+?\]/, "____"), alts: alts ? alts.split(";").map((a) => a.trim()) : [] };
+};
+const legacyLines = (n) => { const u = LEGACY_UNITS.find((x) => x.id === n); return (u.s.trim() + (typeof EXTRA_S !== "undefined" && EXTRA_S[n] ? "\n" + EXTRA_S[n].trim() : "")).split("\n").filter((l) => l.trim()); };
+const DEFS = [...(typeof TOPIC_DEFS !== "undefined" ? TOPIC_DEFS : [])];
+const usedLegacy = new Set(DEFS.map((d) => d.legacy).filter(Boolean));
+LEGACY_UNITS.filter((u) => !usedLegacy.has(u.id)).forEach((u) => DEFS.push({ key: LEGACY_KEYS[u.id] || "u" + u.id, level: u.level, legacy: u.id, title: u.title, sub: "", idea: u.idea, s: "" }));
+const UNITS = DEFS.map((d, i) => ({
+  id: i + 1, key: d.key, level: d.level, title: d.title, sub: d.sub || "", legacy: d.legacy || null, ficha: d.ficha || null,
+  idea: d.ficha ? d.ficha.clave : d.idea || [],
 }));
+const SENTENCES = DEFS.flatMap((d, i) => {
+  const out = [];
+  if (d.legacy) legacyLines(d.legacy).forEach((line, k) => out.push({ id: `u${d.legacy}-${k}`, unit: i + 1, topic: d.key, ...parseLine(line) }));
+  (d.s || "").split("\n").filter((l) => l.trim()).forEach((line, k) => out.push({ id: `${d.key}-${k}`, unit: i + 1, topic: d.key, ...parseLine(line) }));
+  return out;
+});
+const TOPIC_BY_KEY = Object.fromEntries(UNITS.map((u) => [u.key, u]));
+const LEGACY_TO_UNIT = Object.fromEntries(UNITS.filter((u) => u.legacy).map((u) => [u.legacy, u.id]));
 
 if (typeof EXTRA_STORIES !== "undefined") STORIES.push(...EXTRA_STORIES);
+if (typeof STORIES_A1 !== "undefined") STORIES.push(...STORIES_A1);
