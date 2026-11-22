@@ -129,14 +129,15 @@ function streak() {
 function renderStreak() { $("#streak").textContent = "🔥 " + streak(); $("#xp").textContent = "⚡ " + dayLog().xp; }
 const totalXP = () => Object.values(store.get("days", {})).reduce((n, d) => n + (d.xp || 0), 0);
 
-const LEVEL_START = { A1: 1, A2: 7, B1: 12 };
+const LEVEL_START = Object.fromEntries(["A1", "A2", "B1", "B2"].map((l) => [l, (UNITS.find((u) => u.level === l) || UNITS[0]).id]));
 const PROFILE_DEFAULT = { level: "A1", diag: "15/40 (A1 en proceso)", unit: 1, name: "Jared", goals: [], interests: ["Programación", "Videojuegos", "Vida universitaria"], minutes: 10, sound: true, big: false, silent: false, onboarded: false };
 function profile() { return Object.assign({}, PROFILE_DEFAULT, store.get("profile", {})); }
 const SESSION_SIZE = { 5: 10, 10: 15, 15: 20, 20: 25 };
 const sessionSize = () => SESSION_SIZE[profile().minutes] || 15;
 function applyPrefs() { document.documentElement.classList.toggle("big", !!profile().big); }
 function setProfile(p) { store.set("profile", Object.assign(profile(), p)); }
-const curUnit = () => Math.min(UNITS.length, profile().unit);
+const curUnit = () => { const p = profile(); if (p.unitKey && TOPIC_BY_KEY[p.unitKey]) return TOPIC_BY_KEY[p.unitKey].id; return Math.min(UNITS.length, p.unit || 1); };
+const setUnit = (id) => { const u = UNITS[Math.max(0, Math.min(UNITS.length, id) - 1)]; setProfile({ unit: u.id, unitKey: u.key }); };
 
 /* ---------- Repetición espaciada de oraciones ---------- */
 const STEPS = [0, 1, 2, 4, 7, 14, 30];
@@ -155,7 +156,7 @@ function unitMastery(uid) {
 function maybeAdvance() {
   const u = curUnit();
   if (u < UNITS.length && unitMastery(u) >= 80) {
-    setProfile({ unit: u + 1 });
+    setUnit(u + 1);
     setTimeout(() => toast(`¡Desbloqueaste la unidad ${u + 1}! 🎉`), 900);
   }
 }
@@ -188,7 +189,7 @@ const routes = {};
 let cleanup = null;
 const go = (h) => { location.hash = h; };
 function setTitle(t, back) { $("#title").textContent = t; $("#back").hidden = !back; }
-const TAB = { home: "home", metodo: "home", aprender: "aprender", ruta: "aprender", unidad: "aprender", tema: "aprender", guias: "aprender", guia: "aprender", consulta: "aprender", practicar: "practicar", sesion: "practicar", rapida: "practicar", silenciosa: "practicar", historias: "practicar", historia: "practicar", sonidos: "practicar", quiz: "practicar", dictado: "practicar", repite: "practicar", contrarreloj: "practicar", hablar: "practicar", parejas: "practicar", corrige: "practicar", palabras: "practicar", repaso: "repaso", repasar: "repaso", errores: "repaso", guardadas: "repaso", tarjetas: "repaso", estudiar: "repaso", progreso: "progreso", reporte: "progreso", bienvenida: "progreso" };
+const TAB = { home: "home", metodo: "home", aprender: "aprender", ruta: "aprender", unidad: "aprender", tema: "aprender", guias: "aprender", guia: "aprender", consulta: "aprender", practicar: "practicar", sesion: "practicar", rapida: "practicar", silenciosa: "practicar", historias: "practicar", historia: "practicar", sonidos: "practicar", quiz: "practicar", dictado: "practicar", repite: "practicar", contrarreloj: "practicar", hablar: "practicar", parejas: "practicar", corrige: "practicar", palabras: "practicar", repaso: "repaso", repasar: "repaso", errores: "repaso", guardadas: "repaso", tarjetas: "repaso", estudiar: "repaso", progreso: "progreso", reporte: "progreso", bienvenida: "progreso", buscar: "aprender" };
 function render() {
   if (cleanup) { cleanup(); cleanup = null; }
   if (window.speechSynthesis) speechSynthesis.cancel();
@@ -331,7 +332,7 @@ routes.unidad = (id) => {
     <div class="list">${sents.map((s) => `<button class="row say" data-t="${esc(s.en)}"><span class="emoji">🔊</span><span class="grow"><span class="t">${esc(s.en)}</span><div class="d">${esc(s.es)}</div></span></button>`).join("")}</div>`;
   view.querySelectorAll(".say").forEach((b) => (b.onclick = () => speak(b.dataset.t)));
   $("#practice").onclick = () => runSession(buildUnitSession(u.id), `Unidad ${u.id}`, false);
-  const sc = $("#setcur"); if (sc) sc.onclick = () => { setProfile({ unit: u.id }); toast("Listo, es tu unidad actual"); render(); };
+  const sc = $("#setcur"); if (sc) sc.onclick = () => { setUnit(u.id); toast("Listo, es tu tema actual"); render(); };
 };
 
 /* ---------- Frases guardadas, reportes y correcciones ---------- */
@@ -754,11 +755,12 @@ routes.guardadas = () => {
 
 /* Historias */
 routes.historias = () => {
-  setTitle("Historias", true);
+  setTitle("Lecturas", true);
   const read = store.get("stories", {});
-  view.innerHTML = `<p class="sub">Escucha primero sin leer, luego lee tocando cada línea. Toca ES solo si no entiendes.</p>
-    <div class="list">${STORIES.map((s) => `<a class="row" href="#/historia/${s.id}"><span class="emoji">${read[s.id] ? "✅" : "📖"}</span>
-      <span class="grow"><span class="t">${esc(s.title)}</span><div class="d">${s.level} · ${s.lines.length} líneas${read[s.id] ? ` · ${read[s.id]}/3 correctas` : ""}</div></span></a>`).join("")}</div>`;
+  const row = (s) => `<a class="row" href="#/historia/${s.id}"><span class="emoji">${read[s.id] !== undefined ? "✅" : s.title.startsWith("💬") ? "💬" : "📖"}</span>
+      <span class="grow"><span class="t">${esc(s.title.replace("💬 ", ""))}</span><div class="d">${s.title.startsWith("💬") ? "Diálogo · " : ""}${s.lines.length} líneas${read[s.id] !== undefined ? ` · ${read[s.id]}/${s.q.length} correctas` : ""}</div></span><span class="chev">›</span></a>`;
+  view.innerHTML = `<p class="sub">Lee primero sin traducir. Toca cualquier <b>palabra</b> para ver qué significa y <b>ES</b> solo si no entiendes la línea.</p>
+    ${["A1", "A2", "B1", "B2"].map((lv) => { const l = STORIES.filter((s) => s.level === lv); return l.length ? `<h3><span class="lvl ${LEVEL_COLOR[lv]}">${lv}</span> ${l.length} lecturas</h3><div class="list">${l.map(row).join("")}</div>` : ""; }).join("")}`;
 };
 routes.historia = (id) => {
   const st = STORIES.find((x) => x.id === id) || STORIES[0];
@@ -1216,7 +1218,7 @@ routes.progreso = () => {
     <p class="sub">Tu progreso vive solo en este celular. Exporta tu respaldo antes de borrar el ícono.</p>
     <button class="btn secondary" id="rs">Borrar mi progreso</button>`;
   view.querySelectorAll("[data-mn]").forEach((b) => (b.onclick = () => { setProfile({ minutes: Number(b.dataset.mn) }); render(); }));
-  view.querySelectorAll("[data-lv]").forEach((b) => (b.onclick = () => { setProfile({ level: b.dataset.lv, unit: LEVEL_START[b.dataset.lv] }); toast(`Empiezas en ${b.dataset.lv}`); render(); }));
+  view.querySelectorAll("[data-lv]").forEach((b) => (b.onclick = () => { setProfile({ level: b.dataset.lv }); setUnit(LEVEL_START[b.dataset.lv]); toast(`Empiezas en ${b.dataset.lv}`); render(); }));
   view.querySelectorAll("[data-r]").forEach((b) => (b.onclick = () => { store.set("rate", Number(b.dataset.r)); speak("This is how I sound."); render(); }));
   $("#sil").onclick = () => { setProfile({ silent: !p.silent }); render(); };
   $("#snd").onclick = () => { setProfile({ sound: !p.sound }); if (!p.sound) beep(true); render(); };
@@ -1273,6 +1275,10 @@ function diagnose(expected, typed) {
   if (E.join(" ") === T.join(" ")) return out;
   let missing = E.filter((w, i) => E.slice(0, i).filter((x) => x === w).length >= T.filter((x) => x === w).length);
   let extra = T.filter((w, i) => T.slice(0, i).filter((x) => x === w).length >= E.filter((x) => x === w).length);
+  if (T.length < E.length * 0.6 && !extra.length) {
+    out.push(`Tu respuesta quedó **incompleta**. Te faltó: **${missing.join(", ")}**. Arma la oración completa antes de revisar.`);
+    return out;
+  }
   if (!missing.length && !extra.length) {
     out.push("Usaste las palabras correctas, pero el **orden** cambió. En inglés el orden es **sujeto + verbo + complemento**; en preguntas el auxiliar (*do, is, can*) va antes del sujeto.");
     return out;
@@ -1287,7 +1293,7 @@ function diagnose(expected, typed) {
   if (missing[0] === "it" && E[0] === "it") { out.push("Falta el **sujeto**. En inglés siempre se dice: para clima, hora o cosas usa **it** (*It's cold, It's easy*)."); missing = missing.slice(1); }
   if (missing.some((w) => ["am", "is", "are"].includes(w)) && T.some((w) => w.endsWith("ing"))) { out.push("Falta **am/is/are** antes del verbo con -ing: *I **am** studying*."); missing = missing.filter((w) => !["am", "is", "are"].includes(w)); }
   if (missing.some((w) => ["do", "does", "did"].includes(w))) { out.push("Falta el auxiliar **do / does / did**: lo necesitan las preguntas y negativas con verbos normales (*Do you play? She doesn't work*)."); missing = missing.filter((w) => !["do", "does", "did"].includes(w)); }
-  if (missing.some((w) => ["a", "an", "the"].includes(w))) { out.push(`Falta el artículo **${missing.find((w) => ["a", "an", "the"].includes(w))}**. Con profesiones y cosas en singular el inglés casi siempre lo pide (*I'm **a** student*).`); missing = missing.filter((w) => !["a", "an", "the"].includes(w)); }
+  if (missing.some((w) => ["a", "an", "the"].includes(w))) { out.push(`Falta el artículo **${missing.find((w) => ["a", "an", "the"].includes(w))}**. Usa *a/an* para uno cualquiera o una profesión (*I'm **a** student*) y *the* para algo específico (*the server*).`); missing = missing.filter((w) => !["a", "an", "the"].includes(w)); }
   if (missing.includes("not")) { out.push("Falta **not**: la negación se forma con el auxiliar (*don't, isn't, can't*)."); missing = missing.filter((w) => w !== "not"); }
   if (missing.length) out.push(`Te faltó: **${missing.join(", ")}**.`);
   if (extra.length) out.push(`Te sobró: *${extra.join(", ")}*.`);
@@ -1362,6 +1368,39 @@ function showWord(raw) {
   setTimeout(() => p.remove(), 5000);
 }
 
+/* ---------- Buscador global ---------- */
+const stripMd = (t) => String(t).replace(/\*+/g, "");
+function searchAll(q) {
+  const n = (t) => stripMd(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const Q = n(q.trim()); if (Q.length < 2) return null;
+  const has = (...xs) => xs.some((x) => x && n(x).includes(Q));
+  const topics = UNITS.filter((u) => has(u.title, u.sub, u.key, ...(u.idea || []), u.ficha && JSON.stringify(u.ficha))).slice(0, 8);
+  const sents = SENTENCES.filter((s) => has(s.en, s.es)).slice(0, 8);
+  const words = VOCAB_LIST.filter((w) => has(w.en, w.es)).slice(0, 8);
+  const verbs = VERBS.filter((v) => has(v.base, v.past, v.pp, v.es)).slice(0, 6);
+  const fixes = FIX2.filter((f) => has(f.w, f.r, f.why)).slice(0, 6);
+  const stories = STORIES.filter((s) => has(s.title, ...s.lines.map((l) => l[0]))).slice(0, 5);
+  return { topics, sents, words, verbs, fixes, stories };
+}
+routes.buscar = () => {
+  setTitle("Buscar", true);
+  view.innerHTML = `<input type="search" id="sq" placeholder="Busca: depend, pasado, phrasal, contraseña..." autocomplete="off" autocapitalize="off" value="${esc(store.get("lastSearch", ""))}"><div id="sr"></div>`;
+  const draw = () => {
+    const q = $("#sq").value; store.set("lastSearch", q); const r = searchAll(q);
+    if (!r) { $("#sr").innerHTML = `<p class="sub" style="margin-top:12px">Busca en temas, fichas, oraciones, vocabulario, verbos, errores típicos y lecturas.</p>`; return; }
+    const sec = (title, items, fn) => items.length ? `<h3>${title}</h3><div class="list">${items.map(fn).join("")}</div>` : "";
+    const html = sec("Temas", r.topics, (u) => `<a class="row" href="#/tema/${u.id}/leer"><span class="lvl ${LEVEL_COLOR[u.level]}">${u.level}</span><span class="grow"><span class="t">${esc(u.title)}</span><div class="d">${esc(u.sub || "")}</div></span><span class="chev">›</span></a>`)
+      + sec("Vocabulario", r.words, (w) => `<button class="row say" data-t="${esc(w.en.replace(/^to /, ""))}"><span class="grow"><span class="t">${esc(w.en)}</span><div class="d">${esc(w.es)} · ${esc(w.cat)}</div></span><span>🔊</span></button>`)
+      + sec("Verbos", r.verbs, (v) => `<button class="row say" data-t="${esc(v.base)}, ${esc(v.past)}, ${esc(v.pp)}"><span class="grow"><span class="t">${esc(v.base)} · ${esc(v.past)} · ${esc(v.pp)}</span><div class="d">${esc(v.es)}</div></span><span>🔊</span></button>`)
+      + sec("Errores típicos", r.fixes, (f) => `<div class="row err-row"><span class="grow"><div><s>${esc(f.w)}</s> → <b>${esc(f.r)}</b></div><div class="d">${md(f.why)}</div></span></div>`)
+      + sec("Oraciones", r.sents, (s) => `<button class="row say" data-t="${esc(s.en)}"><span class="grow"><span class="t">${esc(s.en)}</span><div class="d">${esc(s.es)} · ${esc((topicOf(s.topic) || {}).title || "")}</div></span><span>🔊</span></button>`)
+      + sec("Lecturas", r.stories, (s) => `<a class="row" href="#/historia/${s.id}"><span class="lvl ${LEVEL_COLOR[s.level]}">${s.level}</span><span class="grow"><span class="t">${esc(s.title)}</span></span><span class="chev">›</span></a>`);
+    $("#sr").innerHTML = html || `<p class="sub" style="margin-top:12px">Sin resultados para «${esc(q)}».</p>`;
+    $("#sr").querySelectorAll(".say").forEach((b) => (b.onclick = () => speak(b.dataset.t)));
+  };
+  $("#sq").oninput = draw; draw(); setTimeout(() => $("#sq").focus(), 150);
+};
+
 /* ---------- v10: Aprender (mapa por niveles) ---------- */
 const LEVEL_INFO = { A1: "Principiante", A2: "Básico", B1: "Intermedio", B2: "Intermedio alto" };
 const readMap = () => store.get("read", {});
@@ -1371,7 +1410,8 @@ routes.aprender = () => {
   setTitle("Aprender", false);
   const cu = curUnit(), rd = readMap();
   const levels = ["A1", "A2", "B1", "B2"];
-  view.innerHTML = `<p class="sub">Cada tema tiene 3 pasos: <b>leer</b> la ficha, <b>practicar</b> y llegar a <b>dominado</b> (80%).</p>
+  view.innerHTML = `<a class="search-box" href="#/buscar">🔎 Buscar un tema, palabra, verbo o error...</a>
+    <p class="sub">Cada tema tiene 3 pasos: <b>leer</b> la ficha, <b>practicar</b> y llegar a <b>dominado</b> (80%).</p>
     ${levels.map((lv) => {
       const us = UNITS.filter((u) => u.level === lv);
       const done = us.filter((u) => unitMastery(u.id) >= 80).length;
@@ -1384,7 +1424,7 @@ routes.aprender = () => {
             <span class="grow"><span class="t">${esc(u.title)}</span><div class="d">${esc(u.sub || "")}${u.id === cu ? ` · <b class="acc">estás aquí</b>` : ""}</div>
               <div class="steps"><span class="${read ? "on" : ""}">📖 Leer</span><span class="${m > 0 ? "on" : ""}">✍️ ${m}%</span><span class="${m >= 80 ? "on" : ""}">🏆</span></div></span>
             <span class="chev">›</span></a>`;
-        }).join("")}</div>` : `<p class="muted small" style="margin:6px 4px 0">Llegan en la fase 4: pasado perfecto, tercer condicional, reported speech, causativo y más.</p>`}
+        }).join("")}</div>` : `<p class="muted small" style="margin:6px 4px 0">Próximamente.</p>`}
       </section>`;
     }).join("")}
     <h3>Biblioteca</h3>
@@ -1423,7 +1463,7 @@ routes.tema = (id, tab = "leer") => {
       <p class="muted small">⚪ nueva · 🟡 aprendiendo · ✅ dominada</p>`;
     tb.querySelectorAll(".say").forEach((b) => (b.onclick = () => speak(b.dataset.t)));
     $("#practice").onclick = () => runSession(buildUnitSession(u.id), u.title, false);
-    const sc = $("#setcur"); if (sc) sc.onclick = () => { setProfile({ unit: u.id }); toast("Listo, es tu tema actual"); render(); };
+    const sc = $("#setcur"); if (sc) sc.onclick = () => { setUnit(u.id); toast("Listo, es tu tema actual"); render(); };
   } else {
     tb.innerHTML = errs.length ? `<button class="btn" id="rv">Repasar mis errores de este tema</button>
       <h3>Tus errores (${errs.length})</h3><div class="list">${errs.slice().reverse().slice(0, 30).map(errRow).join("")}</div>`
@@ -1473,15 +1513,21 @@ routes.repaso = () => {
     ${recent.length ? `<h3>Errores recientes</h3><div class="list">${recent.map(errRow).join("")}</div>` : ""}`;
 };
 
-/* ---------- Migración de progreso (ruta v10) ---------- */
+/* ---------- Migración de progreso ---------- */
 (() => {
   const raw = store.get("profile", {});
-  if (!raw.pathV) { const nu = raw.unit ? (LEGACY_TO_UNIT[raw.unit] || 1) : 1; store.set("profile", Object.assign(raw, { unit: nu, pathV: 2 })); }
+  if (raw.pathV === 3) return;
+  const V2 = ["a1-be", "a1-pron", "a1-art", "a1-plur", "a1-there", "a1-pres", "a1-do", "a1-prep", "a1-cont", "a1-can", "a1-imp", "a1-num", "a2-past", "a2-irr", "a2-fut", "a2-comp", "a2-quant", "b1-pp"];
+  let key = null;
+  if (raw.pathV === 2) key = V2[(raw.unit || 1) - 1];
+  else if (raw.unit) { const id = LEGACY_TO_UNIT[raw.unit]; key = id ? UNITS[id - 1].key : null; }
+  const u = TOPIC_BY_KEY[key] || UNITS[0];
+  store.set("profile", Object.assign(raw, { unit: u.id, unitKey: u.key, pathV: 3 }));
 })();
 
 /* ---------- Arranque ---------- */
 applyPrefs();
-const APP_VERSION = "10";
+const APP_VERSION = "11";
 if ("serviceWorker" in navigator) {
   const hadController = !!navigator.serviceWorker.controller;
   let reloaded = false;

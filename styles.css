@@ -411,3 +411,6 @@ details.ans[open] summary { border-bottom: 1px solid var(--line); margin-bottom:
 .mini-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .err-row { align-items: flex-start; } .err-row s { color: var(--bad-d); }
 .row.topic { align-items: flex-start; }
+.search-box { display: block; text-decoration: none; color: var(--muted); background: var(--card); border: 2px solid var(--line); border-radius: 16px; padding: 13px 15px; margin-bottom: 14px; font-weight: 600; }
+a.pill { text-decoration: none; color: #fff; }
+h3 .lvl { margin-right: 6px; vertical-align: 1px; }

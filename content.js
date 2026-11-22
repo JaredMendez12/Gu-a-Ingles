@@ -254,4 +254,4 @@ const TOPIC_BY_KEY = Object.fromEntries(UNITS.map((u) => [u.key, u]));
 const LEGACY_TO_UNIT = Object.fromEntries(UNITS.filter((u) => u.legacy).map((u) => [u.legacy, u.id]));
 
 if (typeof EXTRA_STORIES !== "undefined") STORIES.push(...EXTRA_STORIES);
-if (typeof STORIES_A1 !== "undefined") STORIES.push(...STORIES_A1);
+["STORIES_A1", "STORIES_A2", "STORIES_B1", "STORIES_B2"].forEach((n) => { try { STORIES.push(...eval(n)); } catch (e) {} });
